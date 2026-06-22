@@ -275,7 +275,7 @@ def main():
     if no_bkz:
         logger.info("模式: 仅 LLL（BKZ 已跳过）")
     else:
-        logger.info(f"BKZ: block_size={bkz_block_size}, max_loops={bkz_max_loops}, threads={bkz_threads}, auto_abort={bkz_auto_abort}")
+        logger.info(f"BKZ: block_size={bkz_block_size}, max_loops={bkz_max_loops}, omp_threads={bkz_threads}, auto_abort={bkz_auto_abort}")
     logger.info(f"LLL delta: {lll_delta}")
     if float_type == "mpfr":
         logger.info(f"浮点精度: {float_type}, precision={precision} bit")

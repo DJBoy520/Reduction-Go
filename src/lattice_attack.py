@@ -134,6 +134,11 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
 
     Returns a dict with timing, results, and verification details.
     """
+    import os
+    # fpylll 0.6.4 不支持 BKZ.Param(threads=...)，用 OMP_NUM_THREADS 控制并行
+    if bkz_threads:
+        os.environ.setdefault("OMP_NUM_THREADS", str(bkz_threads))
+
     result = {}
     k, l, n = A.shape
     kn = k * n
@@ -195,12 +200,13 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
         t_bkz = time.time()
         completed_loops = 0
 
+        # fpylll 0.6.4 不支持 BKZ.Param(threads=...)，多线程不生效
+        # 如需并行可用 OMP_NUM_THREADS 环境变量
         for loop_i in range(1, bkz_max_loops + 1):
             param = BKZ.Param(
                 block_size=bkz_block_size,
                 max_loops=1,
                 auto_abort=False,
-                threads=bkz_threads,
             )
             BKZ.reduction(B, param, **bkz_kwargs)
             completed_loops = loop_i
