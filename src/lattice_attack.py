@@ -153,7 +153,6 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
     # ── LLL ──
     logger.info(f"[4/5] LLL 约减 (维度 {dim}, {float_type}/{precision}bit)")
 
-    # 浮点精度
     lll_kwargs = {"delta": lll_delta}
     if float_type != "double":
         FPLLL.set_precision(precision)
@@ -161,7 +160,6 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
         lll_kwargs["precision"] = precision
         lll_kwargs["method"] = "proved"
 
-    # 进度条
     lll_progress = LLLProgress(dim, float_type, precision)
     lll_progress.start()
     LLL.reduction(B, **lll_kwargs)
@@ -175,25 +173,67 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
     else:
         logger.info(f"[5/5] BKZ 约减 (b={bkz_block_size}, max={bkz_max_loops})")
 
+        # 计算 real_norm 用于 ratio 显示
+        s1_c = s1_real.copy()
+        s2_c = s2_real.copy()
+        s1_c[s1_c >= q // 2] -= q
+        s2_c[s2_c >= q // 2] -= q
+        real_norm_for_ratio = float(np.sqrt(
+            np.sum(s1_c.astype(np.int64) ** 2) +
+            np.sum(s2_c.astype(np.int64) ** 2)
+        ))
+
         bkz_progress = BKZProgress(dim, bkz_block_size, bkz_max_loops,
                                     float_type, precision)
         bkz_progress.start()
 
-        param = BKZ.Param(
-            block_size=bkz_block_size,
-            max_loops=bkz_max_loops,
-            auto_abort=bkz_auto_abort,
-            threads=bkz_threads,
-            callback=bkz_progress,
-        )
         bkz_kwargs = {}
         if float_type != "double":
             bkz_kwargs["float_type"] = float_type
             bkz_kwargs["precision"] = precision
-        BKZ.reduction(B, param, **bkz_kwargs)
+
+        t_bkz = time.time()
+        completed_loops = 0
+
+        for loop_i in range(1, bkz_max_loops + 1):
+            param = BKZ.Param(
+                block_size=bkz_block_size,
+                max_loops=1,
+                auto_abort=False,
+                threads=bkz_threads,
+            )
+            BKZ.reduction(B, param, **bkz_kwargs)
+            completed_loops = loop_i
+
+            # 从格基提取当前最短范数
+            try:
+                norms = []
+                for row_i in range(dim):
+                    row = [int(B[row_i, col]) for col in range(dim)]
+                    n_sq = sum(x * x for x in row)
+                    if n_sq > 0:
+                        norms.append(n_sq ** 0.5)
+                shortest = min(norms) if norms else 0.0
+            except Exception:
+                shortest = 0.0
+
+            bkz_progress.update(loop_i, shortest_norm=shortest,
+                                real_norm=real_norm_for_ratio)
+
+            # auto_abort 检查: 连续无改善时提前退出
+            if bkz_auto_abort and loop_i > 2:
+                # 简单实现: 如果最短范数连续 2 轮没变小就停
+                if not hasattr(bkz_progress, "_prev_norms"):
+                    bkz_progress._prev_norms = []
+                bkz_progress._prev_norms.append(shortest)
+                if len(bkz_progress._prev_norms) >= 3:
+                    recent = bkz_progress._prev_norms[-3:]
+                    if recent[-1] >= recent[-2] >= recent[-3]:
+                        logger.info(f"    BKZ auto-abort: 连续无改善，提前终止于 loop {loop_i}")
+                        break
 
         result["bkz_time"] = bkz_progress.finish()
-        result["bkz_loops"] = bkz_progress.loop
+        result["bkz_loops"] = completed_loops
     logger.info(f"    BKZ 完成: {result['bkz_time']:.3f}s")
 
     # ── Extract candidates ──

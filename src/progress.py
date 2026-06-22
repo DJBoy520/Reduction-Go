@@ -1,8 +1,10 @@
 """
-进度条模块 — LLL/BKZ 动态进度显示。
+进度显示模块 — LLL/BKZ 实时状态反馈。
 
-fpylll 的 LLL.reduction() 是阻塞调用，无法获取内部迭代回调，
-所以 LLL 用计时+状态动画显示。BKZ 有 callback 接口，可以实时显示循环进度。
+LLL: fpylll 的 LLL.reduction() 是阻塞 C++ 调用，无迭代回调，
+     用后台线程每秒刷新 elapsed time。
+BKZ: 拆成 max_loops 次 BKZ.reduction(B, Param(max_loops=1)),
+     每轮结束 Python 拿回控制权，更新进度条+最短范数。
 """
 
 import sys
@@ -17,7 +19,7 @@ except ImportError:
 
 
 def _fmt_time(seconds: float) -> str:
-    """格式化秒数为人类可读字符串。"""
+    """格式化秒数。"""
     if seconds < 60:
         return f"{seconds:.1f}s"
     m, s = divmod(int(seconds), 60)
@@ -39,11 +41,49 @@ def _fmt_norm(norm: float) -> str:
         return f"{norm/1e6:.0f}M"
 
 
-class LLLProgress:
-    """LLL 约减进度显示。
+# ── 经验耗时估算 ────────────────────────────────────────────────────────────
 
-    fpylll 的 LLL.reduction() 是单次阻塞调用，没有迭代回调，
-    所以用后台线程做状态动画 + 计时。
+def estimate_lll_time(dim: int) -> tuple[float, float]:
+    """估算 LLL 耗时范围（秒），基于经验公式。"""
+    # 经验: dim^2.5 ~ dim^3，系数粗估
+    base = (dim / 200) ** 2.5
+    lo = max(1, base * 10)
+    hi = lo * 3
+    return lo, hi
+
+
+def estimate_bkz_time(dim: int, block_size: int, max_loops: int) -> tuple[float, float]:
+    """估算 BKZ 耗时范围（秒）。"""
+    # BKZ 每轮比 LLL 慢 block_size 倍左右
+    base = (dim / 200) ** 2.5 * (block_size / 10) ** 1.5
+    lo = max(1, base * 5 * max_loops)
+    hi = lo * 4
+    return lo, hi
+
+
+def print_estimate(dim: int, block_size: int, max_loops: int,
+                   float_type: str, precision: int):
+    """打印参数和耗时估算。"""
+    lll_lo, lll_hi = estimate_lll_time(dim)
+    bkz_lo, bkz_hi = estimate_bkz_time(dim, block_size, max_loops)
+
+    print(f"\n{'='*50}")
+    print(f"  维度 = {dim}")
+    print(f"  BlockSize = {block_size}")
+    print(f"  Precision = {float_type}/{precision}bit" if float_type == "mpfr"
+          else f"  FloatType = {float_type}")
+    print(f"  预计 LLL: {_fmt_time(lll_lo)} ~ {_fmt_time(lll_hi)}")
+    print(f"  预计 BKZ: {_fmt_time(bkz_lo)} ~ {_fmt_time(bkz_hi)}")
+    print(f"{'='*50}\n")
+
+
+# ── LLL 进度 ────────────────────────────────────────────────────────────────
+
+class LLLProgress:
+    """LLL 约减进度 — 后台线程每秒刷新 elapsed time。
+
+    fpylll 的 LLL.reduction() 是单次阻塞 C++ 调用，
+    Python 拿不到控制权，只能用后台线程显示计时。
     """
 
     def __init__(self, dim: int, float_type: str, precision: int):
@@ -57,36 +97,25 @@ class LLLProgress:
 
     def start(self):
         self.t0 = time.time()
-        if not HAS_TQDM:
-            return
+        print(f"\nLLL 运行中...")
 
-        desc = f"LLL {self.dim}×{self.dim}"
-        if self.float_type == "mpfr":
-            desc += f" mpfr/{self.precision}bit"
-        else:
-            desc += f" {self.float_type}"
-
-        self._pbar = tqdm(
-            total=None,
-            desc=desc,
-            bar_format="{desc}: {elapsed}",
-            leave=True,
-            file=sys.stderr,
-        )
-        self._thread = threading.Thread(target=self._update_loop, daemon=True)
-        self._thread.start()
+        if HAS_TQDM:
+            self._pbar = tqdm(
+                total=None,
+                desc="LLL",
+                bar_format="{desc} | {elapsed}",
+                leave=True,
+                file=sys.stderr,
+            )
+            self._thread = threading.Thread(target=self._update_loop, daemon=True)
+            self._thread.start()
 
     def _update_loop(self):
-        dots = 0
         while not self._stop.is_set():
             elapsed = time.time() - self.t0
-            spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[dots % 10]
-            self._pbar.set_description(
-                f"LLL {self.dim}×{self.dim} {spin} {_fmt_time(elapsed)}"
-            )
+            self._pbar.set_description(f"LLL | elapsed={_fmt_time(elapsed)}")
             self._pbar.update(0)
-            dots += 1
-            self._stop.wait(0.5)
+            self._stop.wait(1.0)
 
     def finish(self) -> float:
         elapsed = time.time() - self.t0
@@ -94,18 +123,21 @@ class LLLProgress:
         if self._thread:
             self._thread.join(timeout=2)
         if self._pbar:
-            self._pbar.set_description(
-                f"LLL {self.dim}×{self.dim} ✓ {_fmt_time(elapsed)}"
-            )
+            self._pbar.set_description(f"LLL ✓ {_fmt_time(elapsed)}")
             self._pbar.close()
+        else:
+            print(f"LLL 完成: {_fmt_time(elapsed)}")
         return elapsed
 
 
-class BKZProgress:
-    """BKZ 约减进度显示。
+# ── BKZ 进度 ────────────────────────────────────────────────────────────────
 
-    fpylll BKZ 有 callback 接口，每次循环都会调用，
-    可以实时显示循环数、当前最短向量范数、耗时。
+class BKZProgress:
+    """BKZ 约减进度 — 循环驱动，每轮更新进度条。
+
+    不依赖 fpylll 的 callback（0.6.4 不支持），
+    而是把 BKZ.reduction 拆成 max_loops 次单轮调用，
+    每轮结束后 Python 拿回控制权更新显示。
     """
 
     def __init__(self, dim: int, block_size: int, max_loops: int,
@@ -121,58 +153,44 @@ class BKZProgress:
 
     def start(self):
         self.t0 = time.time()
-        if not HAS_TQDM:
-            return
+        self.loop = 0
 
-        desc = f"BKZ b={self.block_size}"
-        if self.float_type == "mpfr":
-            desc += f" mpfr/{self.precision}bit"
+        if HAS_TQDM:
+            self._pbar = tqdm(
+                total=self.max_loops,
+                desc="BKZ",
+                bar_format="{desc} | {n_fmt}/{total_fmt} |{bar}| {elapsed} | {postfix}",
+                leave=True,
+                file=sys.stderr,
+            )
 
-        self._pbar = tqdm(
-            total=self.max_loops,
-            desc=desc,
-            bar_format="{desc}: {n_fmt}/{total_fmt} |{bar}| {elapsed}",
-            leave=True,
-            file=sys.stderr,
-        )
-
-    def __call__(self, loop: int, bkz):
+    def update(self, loop: int, shortest_norm: float = None,
+               real_norm: float = None):
+        """每轮 BKZ 结束后调用。"""
         self.loop = loop
         elapsed = time.time() - self.t0
 
-        # 从 BKZ 状态获取最短向量范数
-        min_norm = None
-        try:
-            r = [bkz.M.get_r(i, i) for i in range(bkz.M.d)]
-            non_zero = [x for x in r if x != 0]
-            if non_zero:
-                min_norm = min(abs(x) ** 0.5 for x in non_zero)
-        except Exception:
-            pass
+        # 构建 postfix
+        parts = [f"elapsed={_fmt_time(elapsed)}"]
+        if shortest_norm is not None:
+            parts.append(f"|r*|={_fmt_norm(shortest_norm)}")
+        if real_norm is not None and real_norm > 0:
+            ratio = shortest_norm / real_norm
+            parts.append(f"ratio={ratio:.2f}x")
+        postfix = " | ".join(parts)
 
         if self._pbar:
             self._pbar.update(1)
-            postfix = _fmt_time(elapsed)
-            if min_norm is not None:
-                postfix += f" |r*|≈{_fmt_norm(min_norm)}"
             self._pbar.set_postfix_str(postfix)
-        elif HAS_TQDM is False:
-            # 回退到 logger
-            import logging
-            logger = logging.getLogger(__name__)
-            norm_str = f" |r*|≈{_fmt_norm(min_norm)}" if min_norm else ""
-            logger.info(f"    BKZ {loop}/{self.max_loops}: "
-                        f"耗时 {_fmt_time(elapsed)}{norm_str}")
+        else:
+            # 回退到 print
+            print(f"  BKZ Loop {loop}/{self.max_loops} | {postfix}")
 
     def finish(self) -> float:
         elapsed = time.time() - self.t0
         if self._pbar:
-            desc = f"BKZ b={self.block_size}"
-            if self.float_type == "mpfr":
-                desc += f" mpfr/{self.precision}bit"
-            self._pbar.set_description(f"{desc} ✓")
-            self._pbar.set_postfix_str(
-                f"{self.loop} loops, {_fmt_time(elapsed)}"
-            )
+            self._pbar.set_description(f"BKZ ✓ {_fmt_time(elapsed)}")
             self._pbar.close()
+        else:
+            print(f"BKZ 完成: {_fmt_time(elapsed)}")
         return elapsed

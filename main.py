@@ -32,6 +32,7 @@ from src.protocol_adapter import ProtocolAdapter, D_BY_PARAMS
 from src.poly_math import mat_vec_mul, vec_add_mod
 from src.cert_parser import parse_certificate
 from src.logger import setup_logging
+from src.progress import print_estimate
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,10 @@ def _run_cert_attack(args):
     s1_dummy = np.zeros((l, n), dtype=np.int64)
     s2_dummy = np.zeros((k, n), dtype=np.int64)
 
+    # 参数和耗时估算
+    dim = k * n + l * n + 1
+    print_estimate(dim, bkz_block_size, bkz_max_loops, float_type, precision)
+
     # 格攻击
     attack_result = run_attack(
         A, t_recon, q, s1_dummy, s2_dummy,
@@ -253,7 +258,7 @@ def main():
     bkz_threads = p.get("bkz_threads", 6)
     no_bkz = args.no_bkz or not p.get("use_bkz", True)
     lll_delta = args.lll_delta
-    seed = args.seed.to_bytes(8, "big") if args.seed is not None else None
+    seed = args.seed.to_bytes(8, "big").ljust(32, b"\x00") if args.seed is not None else None
     bkz_auto_abort = args.bkz_auto_abort or p.get("auto_abort", False)
     float_type = args.float_type if args.float_type is not None else p.get("float_type", "mpfr")
     precision = args.precision if args.precision is not None else p.get("precision", 200)
@@ -365,6 +370,10 @@ def main():
     step_done()
 
     # ── [3/5]–[5/5] 格攻击 ──
+    # 参数和耗时估算
+    dim = k * n + l * n + 1
+    print_estimate(dim, bkz_block_size, bkz_max_loops, float_type, precision)
+
     # s1_real, s2_real 用于对比恢复结果
     # slack 模式下 s2_real = s2' (合并误差后的值)
     attack_result = run_attack(A, t_attack, q, s1, s2_attack,
