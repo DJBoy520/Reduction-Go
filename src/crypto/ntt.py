@@ -5,26 +5,15 @@ NTT/INTT — Number Theoretic Transform for ML-DSA (FIPS 204 §4.3)。
 
 数学基础：
   - q = 8380417 = 2^23 - 2^13 + 1
-  - N_REF = 256 (参考多项式维度)
-  - ω = 1921994 — primitive 2·N_REF = 512-th root of unity mod q
-  - ω^{256} = -1 mod q → negacyclic 性质
+  - N_REF = 256 (标准多项式维度)
+  - ω = 1921994 — primitive 2·N_REF=512-th root of unity mod q
+  - ω^256 = -1 mod q → negacyclic 性质
+  - 对于任意 n，ω_{2n} = ω^{N_REF/n} 是 primitive 2n-th root of unity
 
-对于任意维度 n (power of 2, n ≤ N_REF):
-  - ω_{2n} = ω^{N_REF/n} — 适配维度的 primitive 2n-th root
-  - premult:  g[j] = f[j] · ω_{2n}^j
-  - butterfly: 用 ω_{2n}^2 (primitive n-th root)
-
-快速 NTT (Cooley-Tukey DIT, O(n log n)):
+快速 NTT (Cooley-Tukey, O(n log n)):
   1. 预乘: g[j] = f[j] · ω_{2n}^j
-  2. Bit-reverse 置换
-  3. Cooley-Tukey 蝶形 with ω_{2n}^2
-  4. 结果: f_hat[k] = g_hat[k] = f(ω_{2n}^{2k+1})
-
-快速 INTT (Gentle-Sanders DIF + bit-reverse, O(n log n)):
-  1. Gentle-Sanders 蝶形 with ω_{2n}^{-2} (输入正常序，输出 bit-reversed)
-  2. Bit-reverse 置换
-  3. 逆预乘: f[j] = g[j] · ω_{2n}^{-j}
-  4. 乘以 n^{-1}
+  2. 标准 NTT with ω_{2n}^2: g_hat = NTT_{ω_{2n}^2}(g)
+  3. 结果: f_hat[k] = g_hat[k] = f(ω_{2n}^{2k+1})
 
 验证: python3 src/crypto/ntt.py
 """
@@ -34,71 +23,57 @@ import numpy as np
 # ── 域参数 ────────────────────────────────────────────────────────────────────
 
 Q = 8380417  # 2^23 - 2^13 + 1
+N_REF = 256  # 参考维度
 
-# ω = primitive 2·N_REF-th root of unity (order 512)
+# ω = primitive 2·N_REF=512-th root of unity
 # ω = 10^((q-1)/512) mod q, where 10 is a primitive root of q
 OMEGA = 1921994
-OMEGA_INV = pow(OMEGA, Q - 2, Q)
 
-# 参考维度 N_REF=256 时的 butterfly root (order-N_REF)
-# ω^2 = primitive N_REF=256-th root of unity
-OMEGA_N_REF = (OMEGA * OMEGA) % Q
+# ── 维度自适应根 ─────────────────────────────────────────────────────────────
 
-N_REF = 256  # 参考多项式维度（默认 n）
+# 缓存: {(n, kind): np.array}
+_POWERS_CACHE = {}
 
-# ── ω 缩放缓存 ────────────────────────────────────────────────────────────────
 
 def _omega_2n(n: int) -> int:
-    """返回适配维度 n 的 primitive 2n-th root of unity。
+    """返回 primitive 2n-th root of unity mod q。
 
-    ω_{2n} = ω^{N_REF/n} mod q，其中 ω 是 primitive 2·N_REF-th root。
-    对于 n=256: ω_{2n} = ω  (order 512)
-    对于 n=128: ω_{2n} = ω^2  (order 256)
+    ω_{2n} = ω^{N_REF/n}，其中 ω 是 primitive 2·N_REF-th root。
     """
-    assert n > 0 and (n & (n - 1)) == 0, f"n={n} must be a power of 2"
-    assert n <= N_REF, f"n={n} must be ≤ {N_REF}"
     return pow(OMEGA, N_REF // n, Q)
 
 
-def _omega_2n_inv(n: int) -> int:
-    """返回适配维度 n 的 primitive 2n-th root 的逆。"""
-    return pow(_omega_2n(n), Q - 2, Q)
+def _get_powers(n: int, kind: str = "premul") -> np.ndarray:
+    """获取预计算的幂次表（带缓存）。
 
+    kind:
+      - "premul": ω_{2n}^0, ω_{2n}^1, ..., ω_{2n}^{n-1} (预乘用)
+      - "premul_inv": ω_{2n}^{-0}, ..., ω_{2n}^{-(n-1)} (逆预乘用)
+      - "twiddle": (ω_{2n}^2)^0, ..., (ω_{2n}^2)^{n-1} (蝶形 twiddle)
+      - "twiddle_inv": (ω_{2n}^{-2})^0, ..., (ω_{2n}^{-2})^{n-1}
+    """
+    cache_key = (n, kind)
+    if cache_key in _POWERS_CACHE:
+        return _POWERS_CACHE[cache_key]
 
-def _omega_n(n: int) -> int:
-    """返回适配维度 n 的 primitive n-th root of unity (= ω_{2n}^2)。"""
-    w = _omega_2n(n)
-    return (w * w) % Q
+    w2n = _omega_2n(n)
+    w2n_sq = (w2n * w2n) % Q
+    w2n_inv = pow(w2n, Q - 2, Q)
+    w2n_sq_inv = pow(w2n_sq, Q - 2, Q)
 
+    if kind == "premul":
+        powers = np.array([pow(w2n, i, Q) for i in range(n)], dtype=np.int64)
+    elif kind == "premul_inv":
+        powers = np.array([pow(w2n_inv, i, Q) for i in range(n)], dtype=np.int64)
+    elif kind == "twiddle":
+        powers = np.array([pow(w2n_sq, i, Q) for i in range(n)], dtype=np.int64)
+    elif kind == "twiddle_inv":
+        powers = np.array([pow(w2n_sq_inv, i, Q) for i in range(n)], dtype=np.int64)
+    else:
+        raise ValueError(f"Unknown kind: {kind}")
 
-def _omega_n_inv(n: int) -> int:
-    """返回适配维度 n 的 primitive n-th root 的逆 (= ω_{2n}^{-2})。"""
-    return pow(_omega_n(n), Q - 2, Q)
-
-
-# ── Pre-computed powers (per-n 缓存) ──────────────────────────────────────────
-
-_POWERS_CACHE: dict = {}           # (n, kind) → np.ndarray
-
-
-def _get_omega_2n_powers(n: int) -> np.ndarray:
-    """ω_{2n}^0, ω_{2n}^1, ..., ω_{2n}^{n-1} (per-n 缓存)。"""
-    key = (n, "omega")
-    if key not in _POWERS_CACHE:
-        w = _omega_2n(n)
-        _POWERS_CACHE[key] = np.array([pow(w, i, Q) for i in range(n)],
-                                       dtype=np.int64)
-    return _POWERS_CACHE[key]
-
-
-def _get_omega_2n_inv_powers(n: int) -> np.ndarray:
-    """ω_{2n}^{-0}, ω_{2n}^{-1}, ..., ω_{2n}^{-(n-1)} (per-n 缓存)。"""
-    key = (n, "omega_inv")
-    if key not in _POWERS_CACHE:
-        w_inv = _omega_2n_inv(n)
-        _POWERS_CACHE[key] = np.array([pow(w_inv, i, Q) for i in range(n)],
-                                       dtype=np.int64)
-    return _POWERS_CACHE[key]
+    _POWERS_CACHE[cache_key] = powers
+    return powers
 
 
 # ── Bit-reversal ──────────────────────────────────────────────────────────────
@@ -122,42 +97,42 @@ def _bit_reverse_array(arr: np.ndarray) -> np.ndarray:
     return result
 
 
-# ── Forward NTT ───────────────────────────────────────────────────────────────
+# ── Forward NTT (Cooley-Tukey DIT) ───────────────────────────────────────────
 
 def ntt(f: np.ndarray, n: int = N_REF) -> np.ndarray:
     """Forward negacyclic NTT (Cooley-Tukey DIT, O(n log n))。
 
-    f_hat[k] = Σ_j f[j] · ω_{2n}^{(2k+1)j}  (negacyclic evaluation)
+    f_hat[k] = Σ_j f[j] · ω_{2n}^{(2k+1)j}
 
-    实现 (DIT Cooley-Tukey):
-      1. 预乘: g[j] = f[j] · ω_{2n}^j
-      2. Bit-reverse 置换
-      3. DIT 蝶形 with ω_{2n}^2
+    实现:
+      1. 预乘 g[j] = f[j] · ω_{2n}^j
+      2. Bit-reverse g
+      3. Cooley-Tukey butterfly with ω_{2n}^2
 
     Args:
         f: 系数表示，shape (n,)，值域 [0, q)
-        n: 多项式维度 (默认 256, must be power of 2 and ≤ 256)
+        n: 多项式维度 (默认 256)
 
     Returns:
         NTT 域表示 f_hat，shape (n,)
     """
-    omega_2n_powers = _get_omega_2n_powers(n)
-    omega_n = _omega_n(n)
+    premul = _get_powers(n, "premul")
+    twiddle = _get_powers(n, "twiddle")
 
-    # 1. 预乘: g[j] = f[j] * ω_{2n}^j mod q
-    g = (f.astype(np.int64) % Q) * omega_2n_powers % Q
+    # 1. 预乘
+    g = (f.astype(np.int64) % Q) * premul % Q
 
-    # 2. Bit-reverse permutation (DIT 要求输入 bit-reversed)
+    # 2. Bit-reverse
     g = _bit_reverse_array(g)
 
-    # 3. Cooley-Tukey DIT butterfly with ω_{2n}^2
+    # 3. Cooley-Tukey butterfly
     length = 2
     while length <= n:
         half = length // 2
         step = n // length
         for start in range(0, n, length):
             for j in range(half):
-                w = pow(omega_n, (step * j) % n, Q)
+                w = int(twiddle[(step * j) % n])
 
                 u = int(g[start + j])
                 v = int(g[start + j + half]) * w % Q
@@ -170,16 +145,16 @@ def ntt(f: np.ndarray, n: int = N_REF) -> np.ndarray:
     return g
 
 
-# ── Inverse NTT ───────────────────────────────────────────────────────────────
+# ── Inverse NTT (Gentle-Sanders DIF) ─────────────────────────────────────────
 
 def intt(f_hat: np.ndarray, n: int = N_REF) -> np.ndarray:
     """Inverse negacyclic NTT (Gentle-Sanders DIF, O(n log n))。
 
     f[j] = (1/n) · Σ_k f_hat[k] · ω_{2n}^{-(2k+1)j}
 
-    实现 (Gentle-Sanders DIF + bit-reverse):
-      1. Gentle-Sanders DIF 蝶形 with ω_{2n}^{-2} (输入正常序 → 输出 bit-reversed)
-      2. Bit-reverse 置换
+    实现 (DIF: 蝶形 → bit-reverse → 逆预乘 → 缩放):
+      1. Gentle-Sanders butterfly with ω_{2n}^{-2}
+      2. Bit-reverse (DIF 输出是 bit-reversed 的)
       3. 逆预乘: f[j] = g[j] · ω_{2n}^{-j}
       4. 乘以 n^{-1}
 
@@ -190,19 +165,19 @@ def intt(f_hat: np.ndarray, n: int = N_REF) -> np.ndarray:
     Returns:
         系数表示 f，shape (n,)，值域 [0, q)
     """
-    omega_2n_inv_powers = _get_omega_2n_inv_powers(n)
-    omega_n_inv = _omega_n_inv(n)
+    twiddle_inv = _get_powers(n, "twiddle_inv")
+    premul_inv = _get_powers(n, "premul_inv")
 
-    # 1. Gentle-Sanders DIF butterfly with ω_{2n}^{-2}
-    #    DIF: 输入正常序 → 输出 bit-reversed 序
+    # 1. Gentle-Sanders butterfly (DIF: large → small)
     g = f_hat.astype(np.int64) % Q
+
     length = n
     while length >= 2:
         half = length // 2
         step = n // length
         for start in range(0, n, length):
             for j in range(half):
-                w = pow(omega_n_inv, (step * j) % n, Q)
+                w = int(twiddle_inv[(step * j) % n])
 
                 u = int(g[start + j])
                 v = int(g[start + j + half])
@@ -212,12 +187,12 @@ def intt(f_hat: np.ndarray, n: int = N_REF) -> np.ndarray:
 
         length //= 2
 
-    # 2. Bit-reverse 置换 (DIF 输出在 bit-reversed 序)
+    # 2. Bit-reverse (DIF 输出是 bit-reversed)
     g = _bit_reverse_array(g)
 
-    # 3. 逆预乘 ω_{2n}^{-j} 和乘以 n^{-1}
+    # 3. 逆预乘 + 缩放
     n_inv = pow(n, Q - 2, Q)
-    f = g * omega_2n_inv_powers % Q * n_inv % Q
+    f = g * premul_inv % Q * n_inv % Q
 
     return f
 
@@ -234,56 +209,43 @@ def ntt_mul(a: np.ndarray, b: np.ndarray, q: int = Q, n: int = N_REF) -> np.ndar
 
 def ntt_mat_vec_mul(A: np.ndarray, s: np.ndarray, q: int = Q,
                     n: int = N_REF) -> np.ndarray:
-    """NTT 域矩阵-向量乘法。
-
-    A: shape (k, l, n) — 多项式矩阵
-    s: shape (l, n) — 多项式向量
-    返回 t: shape (k, n)
-    """
+    """NTT 域矩阵-向量乘法。"""
     k, l_dim, _ = A.shape
     t = np.zeros((k, n), dtype=np.int64)
-
     s_hat = np.array([ntt(s[j], n) for j in range(l_dim)], dtype=np.int64)
-
     for i in range(k):
         acc_hat = np.zeros(n, dtype=np.int64)
         for j in range(l_dim):
             a_hat = ntt(A[i, j], n)
             acc_hat = (acc_hat + a_hat * s_hat[j]) % q
         t[i] = intt(acc_hat, n)
-
     return t
 
 
 # ── 验证工具 ──────────────────────────────────────────────────────────────────
 
 def _direct_ntt(f: np.ndarray, n: int) -> np.ndarray:
-    """直接 NTT (O(n²)，用于验证)。
-
-    使用适配维度 n 的 ω_{2n} = ω^{N_REF/n}。
-    """
-    omega_2n = _omega_2n(n)
+    """直接 NTT (O(n²)，用于验证)。"""
+    w2n = _omega_2n(n)
     f_hat = np.zeros(n, dtype=np.int64)
     for k in range(n):
         val = 0
         for j in range(n):
-            val = (val + int(f[j]) * pow(omega_2n, (2 * k + 1) * j, Q)) % Q
+            val = (val + int(f[j]) * pow(w2n, (2 * k + 1) * j, Q)) % Q
         f_hat[k] = val
     return f_hat
 
 
 def _direct_intt(f_hat: np.ndarray, n: int) -> np.ndarray:
-    """直接 INTT (O(n²)，用于验证)。
-
-    使用适配维度 n 的 ω_{2n} = ω^{N_REF/n}。
-    """
-    omega_2n_inv = _omega_2n_inv(n)
+    """直接 INTT (O(n²)，用于验证)。"""
+    w2n = _omega_2n(n)
+    w2n_inv = pow(w2n, Q - 2, Q)
     n_inv = pow(n, Q - 2, Q)
     f = np.zeros(n, dtype=np.int64)
     for j in range(n):
         val = 0
         for k in range(n):
-            val = (val + int(f_hat[k]) * pow(omega_2n_inv, (2 * k + 1) * j, Q)) % Q
+            val = (val + int(f_hat[k]) * pow(w2n_inv, (2 * k + 1) * j, Q)) % Q
         f[j] = val * n_inv % Q
     return f
 
@@ -297,7 +259,7 @@ def verify_ntt_roundtrip(n: int = N_REF) -> bool:
     return bool(np.array_equal(f, f_back))
 
 
-def verify_vs_direct(n: int = 256) -> bool:
+def verify_vs_direct(n: int = N_REF) -> bool:
     """验证快速 NTT 与直接 NTT 一致。"""
     rng = np.random.default_rng(123)
     f = rng.integers(0, Q, size=n, dtype=np.int64)
@@ -314,7 +276,6 @@ def verify_negacyclic(n: int = 32) -> bool:
 
     c_ntt = ntt_mul(a, b, Q, n)
 
-    # Full schoolbook negacyclic: c(x) = a(x)·b(x) mod (x^n + 1)
     c_ref = np.zeros(n, dtype=np.int64)
     for i in range(n):
         for j in range(n):
@@ -329,20 +290,19 @@ def verify_negacyclic(n: int = 32) -> bool:
 
 
 if __name__ == "__main__":
+    w2n = _omega_2n(N_REF)
     print(f"q = {Q}")
-    print(f"ω = {OMEGA} (primitive 512-th root)")
-    print(f"ω^256 mod q = {pow(OMEGA, 256, Q)} (should be q-1 = {Q - 1})")
-    print(f"ω^512 mod q = {pow(OMEGA, 512, Q)} (should be 1)")
+    print(f"ω = {OMEGA}")
+    print(f"ω_{2*N_REF} = {w2n}")
+    print(f"ω^{N_REF} = {pow(w2n, N_REF, Q)} (should be {Q-1})")
+    print(f"ω^{2*N_REF} = {pow(w2n, 2*N_REF, Q)} (should be 1)")
     print()
 
-    print(f"--- n = {N_REF} (default) ---")
-    print(f"NTT roundtrip: {verify_ntt_roundtrip(N_REF)}")
-    print(f"Fast vs direct: {verify_vs_direct(N_REF)}")
-    print(f"Negacyclic conv: {verify_negacyclic(32)}")
-    print()
+    for test_n in [4, 8, 16, 32, 64, 128, 256]:
+        rt = verify_ntt_roundtrip(test_n)
+        vd = verify_vs_direct(test_n)
+        status = "✓" if (rt and vd) else "✗"
+        print(f"  n={test_n:>3}: roundtrip={rt}, vs_direct={vd}  {status}")
 
-    print("--- Various n (power of 2) ---")
-    for t_n in [4, 8, 16, 32, 64, 128, 256]:
-        rt = verify_ntt_roundtrip(t_n)
-        fd = verify_vs_direct(t_n)
-        print(f"  n={t_n:3d}: roundtrip={rt}, vs_direct={fd}")
+    print()
+    print(f"  Negacyclic (n=32): {verify_negacyclic(32)}")
