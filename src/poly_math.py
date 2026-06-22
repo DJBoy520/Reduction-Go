@@ -1,23 +1,19 @@
 """
-Polynomial arithmetic in Z_q[x] / (x^n + 1).
+Polynomial arithmetic in Z_q[x] / (x^n + 1)。
 
-Implements negacyclic convolution (school-book O(n^2)) for polynomial
-multiplication mod x^n + 1.  This is the simplified "toy" version;
-can be replaced with NTT-based multiplication later.
+策略:
+  - n ≤ 64: school-book O(n²) 卷积 (足够快)
+  - n = 256 (标准 ML-DSA): 使用 NTT (O(n log n))
 """
 
 import numpy as np
 
 
-# TODO: 当 n 较大时，用 NTT 替换 O(n^2) 乘法。
-def poly_mul_mod(a: np.ndarray, b: np.ndarray, q: int) -> np.ndarray:
-    """Multiply two polynomials in Z_q[x]/(x^n + 1).
+# ── School-book negacyclic (O(n²)) ───────────────────────────────────────────
 
-    a, b: integer arrays of length n, coefficients mod q.
-    Returns: integer array of length n, coefficients in [0, q).
-    """
+def _poly_mul_schoolbook(a: np.ndarray, b: np.ndarray, q: int) -> np.ndarray:
+    """School-book negacyclic 卷积 mod x^n + 1。"""
     n = len(a)
-    assert len(b) == n
     c = np.zeros(n, dtype=np.int64)
     for i in range(n):
         for j in range(n):
@@ -25,14 +21,41 @@ def poly_mul_mod(a: np.ndarray, b: np.ndarray, q: int) -> np.ndarray:
             if idx < n:
                 c[idx] = (c[idx] + int(a[i]) * int(b[j])) % q
             else:
-                # x^n ≡ -1, so coefficient wraps and negates
                 c[idx - n] = (c[idx - n] - int(a[i]) * int(b[j])) % q
     return c % q
 
 
-# TODO: 当 n 较大时，用 NTT 替换 O(n^2) 乘法。
+# ── NTT-based negacyclic (O(n log n)) ────────────────────────────────────────
+
+def _poly_mul_ntt(a: np.ndarray, b: np.ndarray, q: int) -> np.ndarray:
+    """NTT 域 negacyclic 卷积 mod x^n + 1。"""
+    from .crypto.ntt import ntt_mul
+    return ntt_mul(a, b, q, len(a))
+
+
+# ── 自动选择 ──────────────────────────────────────────────────────────────────
+
+_NTT_THRESHOLD = 128  # n > 此值时用 NTT
+
+
+def poly_mul_mod(a: np.ndarray, b: np.ndarray, q: int) -> np.ndarray:
+    """Multiply two polynomials in Z_q[x]/(x^n + 1)。
+
+    自动选择算法:
+      - n ≤ 128: school-book O(n²)
+      - n > 128: NTT O(n log n)
+    """
+    n = len(a)
+    assert len(b) == n
+    if n > _NTT_THRESHOLD:
+        return _poly_mul_ntt(a, b, q)
+    return _poly_mul_schoolbook(a, b, q)
+
+
+# ── Matrix-vector multiplication ─────────────────────────────────────────────
+
 def mat_vec_mul(A: np.ndarray, s: np.ndarray, q: int) -> np.ndarray:
-    """Multiply matrix of polynomials A (k, l, n) by vector of polynomials s (l, n).
+    """Multiply matrix of polynomials A (k, l, n) by vector s (l, n)。
 
     Result: t (k, n) where t[i] = sum_j A[i,j] * s[j] mod (x^n+1, q).
     """
@@ -44,6 +67,8 @@ def mat_vec_mul(A: np.ndarray, s: np.ndarray, q: int) -> np.ndarray:
             t[i] = (t[i] + poly_mul_mod(A[i, j], s[j], q)) % q
     return t
 
+
+# ── Element-wise ──────────────────────────────────────────────────────────────
 
 def vec_add_mod(a: np.ndarray, b: np.ndarray, q: int) -> np.ndarray:
     """Element-wise addition mod q."""
