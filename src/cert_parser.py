@@ -23,7 +23,7 @@ from asn1crypto.core import Sequence, ObjectIdentifier, Null, BitString
 
 from .spki import (
     MLDSA_OIDS, OID_TO_MLDSA,
-    unpack_t1,
+    unpack_t1, t1_coeff_bits,
 )
 
 logger = logging.getLogger(__name__)
@@ -183,6 +183,7 @@ def _decode_spki_with_params(spki_der: bytes, use_toy: bool = False) -> tuple:
     params = params_table[oid].copy()
     params["oid"] = oid
     k, n = params["k"], params["n"]
+    d = params.get("d", 10)
 
     # 提取公钥字节
     bs = spki["subjectPublicKey"]
@@ -191,7 +192,8 @@ def _decode_spki_with_params(spki_der: bytes, use_toy: bool = False) -> tuple:
     bs_contents = bs.contents
     pk_encoded = bs_contents[1:]  # 跳过 unused_bits 前缀
 
-    expected_len = 32 + (k * n * 23 + 7) // 8
+    n_coeff_bits = t1_coeff_bits(d)
+    expected_len = 32 + (k * n * n_coeff_bits + 7) // 8
     if len(pk_encoded) != expected_len:
         raise ValueError(
             f"公钥数据长度不匹配: 期望 {expected_len} 字节, "
@@ -199,8 +201,9 @@ def _decode_spki_with_params(spki_der: bytes, use_toy: bool = False) -> tuple:
         )
 
     rho = pk_encoded[:32]
-    t1_bytes = pk_encoded[32:32 + (k * n * 23 + 7) // 8]
-    t1 = unpack_t1(t1_bytes, k, n)
+    t1_byte_len = (k * n * n_coeff_bits + 7) // 8
+    t1_bytes = pk_encoded[32:32 + t1_byte_len]
+    t1 = unpack_t1(t1_bytes, k, n, d=d)
 
     params["q"] = 8380417  # ML-DSA 标准 q
     return rho, t1, params

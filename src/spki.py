@@ -20,6 +20,7 @@ X.509 SubjectPublicKeyInfo 结构:
     }
 """
 
+import math
 import numpy as np
 from asn1crypto import pem as asn1pem
 from asn1crypto.core import Sequence, ObjectIdentifier, Null, BitString
@@ -81,9 +82,16 @@ def _build_der_null() -> bytes:
 
 # ── t1 打包/解包 ────────────────────────────────────────────────────────────
 
-def pack_t1(t1: np.ndarray, n_coeff_bits: int = 23) -> bytes:
+def t1_coeff_bits(d: int, q: int = 8380417) -> int:
+    """FIPS 204 §6.2: t1 每系数比特数 = ⌈log₂(⌊(q-1)/2ᵈ⌋+1)⌉。"""
+    max_val = (q - 1) >> d
+    return math.ceil(math.log2(max_val + 1))
+
+
+def pack_t1(t1: np.ndarray, d: int = 10, q: int = 8380417) -> bytes:
     """将 t1 系数打包为比特串 (FIPS 204 §6.2)。"""
     k, n = t1.shape
+    n_coeff_bits = t1_coeff_bits(d, q)
     total_bits = k * n * n_coeff_bits
     bit_str = 0
     idx = 0
@@ -96,8 +104,9 @@ def pack_t1(t1: np.ndarray, n_coeff_bits: int = 23) -> bytes:
     return bit_str.to_bytes(byte_len, "big")
 
 
-def unpack_t1(data: bytes, k: int, n: int, n_coeff_bits: int = 23) -> np.ndarray:
+def unpack_t1(data: bytes, k: int, n: int, d: int = 10, q: int = 8380417) -> np.ndarray:
     """从比特串解包 t1 系数。"""
+    n_coeff_bits = t1_coeff_bits(d, q)
     bit_str = int.from_bytes(data, "big")
     total_bits = k * n * n_coeff_bits
     t1 = np.zeros((k, n), dtype=np.int64)
@@ -128,15 +137,20 @@ class _SubjectPublicKeyInfo(Sequence):
 
 # ── 编码/解码 ────────────────────────────────────────────────────────────────
 
+# ML-DSA-44: d=10, bits=13; ML-DSA-65/87: d=13, bits=10
+_MLDSA_D = {"ML-DSA-44": 10, "ML-DSA-65": 13, "ML-DSA-87": 13}
+
+
 def encode_spki(rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65") -> bytes:
     """将公钥 (rho, t1) 编码为 X.509 SubjectPublicKeyInfo DER。
 
-    FIPS 204: rho 必须精确 32 字节。
+    FIPS 204 §6.2: t1 使用 d 相关的 bit width 打包。
     """
     if len(rho) != 32:
         raise ValueError(f"rho 必须 32 字节，实际 {len(rho)} 字节")
     oid = MLDSA_OIDS[mldsa_name]
-    t1_bytes = pack_t1(t1)
+    d = _MLDSA_D.get(mldsa_name, 10)
+    t1_bytes = pack_t1(t1, d=d)
     pk_encoded = rho + t1_bytes
 
     alg_id = _build_der_sequence(_build_der_oid(oid), _build_der_null())
@@ -145,7 +159,7 @@ def encode_spki(rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65") -> by
     return spki_der
 
 
-def decode_spki(der_data: bytes, k: int, n: int) -> tuple:
+def decode_spki(der_data: bytes, k: int, n: int, d: int = 10) -> tuple:
     """从 SubjectPublicKeyInfo DER 解码公钥。
 
     Returns: (rho, t1, mldsa_name)
@@ -160,7 +174,8 @@ def decode_spki(der_data: bytes, k: int, n: int) -> tuple:
     bs_contents = bs.contents
     pk_encoded = bs_contents[1:]  # 跳过 unused_bits 前缀
 
-    expected_len = 32 + (k * n * 23 + 7) // 8  # rho(32) + t1 packed (ceiling)
+    n_coeff_bits = t1_coeff_bits(d)
+    expected_len = 32 + (k * n * n_coeff_bits + 7) // 8
     if len(pk_encoded) < expected_len:
         raise ValueError(
             f"BIT STRING 数据不足: 需要 {expected_len} 字节，"
@@ -168,8 +183,9 @@ def decode_spki(der_data: bytes, k: int, n: int) -> tuple:
         )
 
     rho = pk_encoded[:32]
-    t1_bytes = pk_encoded[32:32 + (k * n * 23 + 7) // 8]
-    t1 = unpack_t1(t1_bytes, k, n)
+    t1_byte_len = (k * n * n_coeff_bits + 7) // 8
+    t1_bytes = pk_encoded[32:32 + t1_byte_len]
+    t1 = unpack_t1(t1_bytes, k, n, d=d)
     return rho, t1, mldsa_name
 
 
@@ -182,12 +198,12 @@ def save_spki_pem(path: str, rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-D
     return len(der)
 
 
-def load_spki_pem(path: str, k: int, n: int) -> tuple:
+def load_spki_pem(path: str, k: int, n: int, d: int = 10) -> tuple:
     """从 PEM 文件加载公钥。Returns: (rho, t1, mldsa_name)"""
     with open(path, "rb") as f:
         pem_data = f.read()
     _, _, der = asn1pem.unarmor(pem_data)
-    return decode_spki(der, k, n)
+    return decode_spki(der, k, n, d=d)
 
 
 def save_spki_der(path: str, rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65"):
@@ -198,8 +214,8 @@ def save_spki_der(path: str, rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-D
     return len(der)
 
 
-def load_spki_der(path: str, k: int, n: int) -> tuple:
+def load_spki_der(path: str, k: int, n: int, d: int = 10) -> tuple:
     """从 DER 文件加载公钥。"""
     with open(path, "rb") as f:
         der = f.read()
-    return decode_spki(der, k, n)
+    return decode_spki(der, k, n, d=d)
