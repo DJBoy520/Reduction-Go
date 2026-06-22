@@ -1,7 +1,10 @@
 __pycache__/
 *.pyc
 .venv/
-logs/
-*.der
+logs/*.log
+logs/summary.txt
+logs/cysignals_crash_logs/
 cysignals_crash_logs/
+*.der
+certs/
 run.pid
