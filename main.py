@@ -218,6 +218,26 @@ def _run_cert_attack(args):
     logger.info("完成。")
 
 
+def _find_best_candidate(classified: list[dict]) -> dict | None:
+    """从分类结果中找最佳候选。
+
+    优先级：完美恢复 > s1 完美恢复 > 最短有效候选。
+    返回 None 如果没有有效候选。
+    """
+    perfect_cands = [c for c in classified if c.get("perfect", False)]
+    if perfect_cands:
+        return perfect_cands[0]
+
+    s1_perfect_cands = [c for c in classified if c.get("s1_perfect", False)]
+    if s1_perfect_cands:
+        return s1_perfect_cands[0]
+
+    valid = [c for c in classified if c["eq_holds"]]
+    if valid:
+        return min(valid, key=lambda c: c["cand_norm"])
+    return None
+
+
 def main():
     args = parse_args()
 
@@ -416,19 +436,7 @@ def main():
     logger.info(f"  总耗时: {total_time:.3f}s")
 
     # ── 最佳候选验证 ──
-    best = None
-    perfect_cands = [c for c in classified if c.get("perfect", False)]
-    if perfect_cands:
-        best = perfect_cands[0]
-    else:
-        # s1_perfect 也算完美恢复
-        s1_perfect_cands = [c for c in classified if c.get("s1_perfect", False)]
-        if s1_perfect_cands:
-            best = s1_perfect_cands[0]
-        else:
-            valid = [c for c in classified if c["eq_holds"]]
-            if valid:
-                best = min(valid, key=lambda c: c["cand_norm"])
+    best = _find_best_candidate(classified)
 
     if best:
         logger.info("═══ 最佳候选 ═══")
@@ -455,10 +463,7 @@ def main():
 
     # ── 生成运行摘要 ──
     summary_path = os.path.join(out_dir, "logs", "summary.txt")
-    best = None
-    valid = [c for c in classified if c["eq_holds"]]
-    if valid:
-        best = min(valid, key=lambda c: c["cand_norm"])
+    best = _find_best_candidate(classified)
 
     with open(summary_path, "w", encoding="utf-8") as f:
         f.write("ML-DSA 格攻击运行摘要\n")

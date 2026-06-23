@@ -64,9 +64,9 @@ def main():
 
     # 保存
     if args.format == "pem":
-        save_spki_pem(args.output, rho, t1, mldsa)
+        save_spki_pem(args.output, rho, t1, mldsa, d=args.d)
     else:
-        save_spki_der(args.output, rho, t1, mldsa)
+        save_spki_der(args.output, rho, t1, mldsa, d=args.d)
     print(f"  已保存: {args.output}")
 
     # 私钥材料

@@ -141,7 +141,7 @@ class _SubjectPublicKeyInfo(Sequence):
 _MLDSA_D = {"ML-DSA-44": 10, "ML-DSA-65": 13, "ML-DSA-87": 13}
 
 
-def encode_spki(rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65") -> bytes:
+def encode_spki(rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65", d: int = None) -> bytes:
     """将公钥 (rho, t1) 编码为 X.509 SubjectPublicKeyInfo DER。
 
     FIPS 204 §6.2: t1 使用 d 相关的 bit width 打包。
@@ -149,7 +149,8 @@ def encode_spki(rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65") -> by
     if len(rho) != 32:
         raise ValueError(f"rho 必须 32 字节，实际 {len(rho)} 字节")
     oid = MLDSA_OIDS[mldsa_name]
-    d = _MLDSA_D.get(mldsa_name, 10)
+    if d is None:
+        d = _MLDSA_D.get(mldsa_name, 10)
     t1_bytes = pack_t1(t1, d=d)
     pk_encoded = rho + t1_bytes
 
@@ -189,9 +190,9 @@ def decode_spki(der_data: bytes, k: int, n: int, d: int = 10) -> tuple:
     return rho, t1, mldsa_name
 
 
-def save_spki_pem(path: str, rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65"):
+def save_spki_pem(path: str, rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65", d: int = None):
     """将公钥保存为 PEM 格式。"""
-    der = encode_spki(rho, t1, mldsa_name)
+    der = encode_spki(rho, t1, mldsa_name, d=d)
     pem_data = asn1pem.armor("PUBLIC KEY", der)
     with open(path, "wb") as f:
         f.write(pem_data)
@@ -206,9 +207,9 @@ def load_spki_pem(path: str, k: int, n: int, d: int = 10) -> tuple:
     return decode_spki(der, k, n, d=d)
 
 
-def save_spki_der(path: str, rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65"):
+def save_spki_der(path: str, rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65", d: int = None):
     """将公钥保存为 DER 格式。"""
-    der = encode_spki(rho, t1, mldsa_name)
+    der = encode_spki(rho, t1, mldsa_name, d=d)
     with open(path, "wb") as f:
         f.write(der)
     return len(der)

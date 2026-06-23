@@ -8,3 +8,4 @@ cysignals_crash_logs/
 *.der
 certs/
 run.pid
+cert.pem
