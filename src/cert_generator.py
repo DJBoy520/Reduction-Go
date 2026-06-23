@@ -79,14 +79,14 @@ def generate_self_signed_cert(
     print(f"  秘密范数: {s_norm:.2f}, 误差范数: {t0_norm:.2f}")
 
     # 3. 编码为 SPKI
-    spki_der = encode_spki(rho, t1, mldsa_name)
+    spki_der = encode_spki(rho, t1, mldsa_name, d=d)
     print(f"  SPKI DER: {len(spki_der)} bytes")
 
     # 4. 保存
     if fmt == "pem":
-        save_spki_pem(output_path, rho, t1, mldsa_name)
+        save_spki_pem(output_path, rho, t1, mldsa_name, d=d)
     else:
-        save_spki_der(output_path, rho, t1, mldsa_name)
+        save_spki_der(output_path, rho, t1, mldsa_name, d=d)
     print(f"  已保存: {output_path} ({fmt.upper()})")
 
     # 5. 同时保存私钥材料 (用于验证攻击结果)

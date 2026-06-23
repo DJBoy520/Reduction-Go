@@ -6,7 +6,9 @@ FIPS 204 §6.2 (Public Key Encoding)
 公钥 PK = (rho, t1)，编码为:
     PK_encoded = rho || t1_enc
     - rho: 32 字节种子
-    - t1_enc: t1 系数按 23-bit 打包 (ML-DSA-44/65/87 均为 23 bit)
+    - t1_enc: t1 系数按 ⌈log₂(⌊(q-1)/2ᵈ⌋+1)⌉-bit 打包
+      ML-DSA-44 (d=10): 13 bits/系数
+      ML-DSA-65/87 (d=13): 10 bits/系数
 
 X.509 SubjectPublicKeyInfo 结构:
     SubjectPublicKeyInfo ::= SEQUENCE {
@@ -88,7 +90,7 @@ def t1_coeff_bits(d: int, q: int = 8380417) -> int:
     return math.ceil(math.log2(max_val + 1))
 
 
-def pack_t1(t1: np.ndarray, d: int = 10, q: int = 8380417) -> bytes:
+def pack_t1(t1: np.ndarray, d: int, q: int = 8380417) -> bytes:
     """将 t1 系数打包为比特串 (FIPS 204 §6.2)。"""
     k, n = t1.shape
     n_coeff_bits = t1_coeff_bits(d, q)
@@ -104,9 +106,14 @@ def pack_t1(t1: np.ndarray, d: int = 10, q: int = 8380417) -> bytes:
     return bit_str.to_bytes(byte_len, "big")
 
 
-def unpack_t1(data: bytes, k: int, n: int, d: int = 10, q: int = 8380417) -> np.ndarray:
-    """从比特串解包 t1 系数。"""
-    n_coeff_bits = t1_coeff_bits(d, q)
+def unpack_t1(data: bytes, k: int, n: int, d: int, q: int = 8380417,
+              n_coeff_bits: int = None) -> np.ndarray:
+    """从比特串解包 t1 系数。
+
+    n_coeff_bits: 直接指定每系数位宽（优先于 d 的推算）。
+    """
+    if n_coeff_bits is None:
+        n_coeff_bits = t1_coeff_bits(d, q)
     bit_str = int.from_bytes(data, "big")
     total_bits = k * n * n_coeff_bits
     t1 = np.zeros((k, n), dtype=np.int64)
@@ -160,14 +167,18 @@ def encode_spki(rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65", d: in
     return spki_der
 
 
-def decode_spki(der_data: bytes, k: int, n: int, d: int = 10) -> tuple:
+def decode_spki(der_data: bytes, k: int, n: int, d: int = None) -> tuple:
     """从 SubjectPublicKeyInfo DER 解码公钥。
 
+    d 默认从 OID 推断 (ML-DSA-44→10, ML-DSA-65/87→13)。
     Returns: (rho, t1, mldsa_name)
     """
     spki = _SubjectPublicKeyInfo.load(der_data)
     oid = spki["algorithm"]["algorithm"].dotted
     mldsa_name = OID_TO_MLDSA.get(oid, f"unknown-{oid}")
+
+    if d is None:
+        d = _MLDSA_D.get(mldsa_name, 10)
 
     bs = spki["subjectPublicKey"]
     if bs.unused_bits:
@@ -199,7 +210,7 @@ def save_spki_pem(path: str, rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-D
     return len(der)
 
 
-def load_spki_pem(path: str, k: int, n: int, d: int = 10) -> tuple:
+def load_spki_pem(path: str, k: int, n: int, d: int = None) -> tuple:
     """从 PEM 文件加载公钥。Returns: (rho, t1, mldsa_name)"""
     with open(path, "rb") as f:
         pem_data = f.read()
@@ -215,7 +226,7 @@ def save_spki_der(path: str, rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-D
     return len(der)
 
 
-def load_spki_der(path: str, k: int, n: int, d: int = 10) -> tuple:
+def load_spki_der(path: str, k: int, n: int, d: int = None) -> tuple:
     """从 DER 文件加载公钥。"""
     with open(path, "rb") as f:
         der = f.read()

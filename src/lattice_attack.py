@@ -245,15 +245,18 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
     # ── Extract candidates ──
     #
     # Kannan 嵌入格基结构:
-    #   B = [ I_{ln}   -A_flat^T   0 ]  ← 左上角是 I (不是 qI)
+    #   B = [ I_{ln}   -A_flat^T   0 ]  ← 左上角是 I
     #       [ 0        q·I_{kn}    0 ]
     #       [ 0        t^T         W ]
     #
     # 格向量 v = c · B = (c1, -A_flat·c1 + q·c2 + t·c3, W·c3)
     #
-    # 当 c3=1 且 c1=s1 时:
-    #   v[:ln] = s1          ← 直接读出，不需要除以 q
-    #   v[ln:] = s2 + q·c2   ← 当 c2=0 时直接得到 s2
+    # 当 c3=1, c1=s1 时:
+    #   v[:ln] = s1 (直接读取，I 块保证无 q 倍数)
+    #   v[ln:-1] = s2 + q·c2 (需要模 q 还原 s2)
+    #
+    # 当 c3=1, c1=-s1 时:
+    #   v[:ln] = -s1, v[ln:-1] = -s2 + q·c2 (sign=-1 翻转)
     #
     logger.info("    搜索候选短向量 (Kannan 嵌入)...")
     # Center real secrets for comparison
@@ -279,15 +282,16 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
 
         sign = 1 if weight == W else -1
 
-        # 直接读出: 格基左上角是 I，所以 row[:ln] = s1 本身
-        # (不是 q·s1，不需要除以 q)
+        # 读取: s1 来自左上角 I 块，直接读取
+        #       s2 来自 q·I 块，值为 s2 + q·c2，需要模 q 还原
         s1_cand = np.array([sign * row[i] for i in range(ln)], dtype=np.int64)
         s2_cand = np.array([sign * row[ln + i] for i in range(kn)], dtype=np.int64)
 
         s1_cand_c = s1_cand.copy()
-        s2_cand_c = s2_cand.copy()
-        s1_cand_c[s1_cand_c >= q // 2] -= q
-        s2_cand_c[s2_cand_c >= q // 2] -= q
+        s1_cand_c[s1_cand_c > q // 2] -= q
+        # s2 必须先模 q（消除 c2 倍数），再中心化
+        s2_cand_c = s2_cand % q
+        s2_cand_c[s2_cand_c > q // 2] -= q
 
         # 验证方程: A·s1' + s2' ≡ t (mod q)
         lhs = vec_add_mod(mat_vec_mul(A, s1_cand_c.reshape(l, n), q),

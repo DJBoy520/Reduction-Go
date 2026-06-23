@@ -87,8 +87,8 @@ def cbd(seed: bytes, eta: int, n: int, idx: int) -> np.ndarray:
         n: 多项式维度
         idx: 多项式索引 (用于域分离)
     """
-    # SHAKE256(seed || bytes(idx))
-    ctx = seed + bytes([idx])
+    # SHAKE256(seed || uint16_le(idx)) — FIPS 204 Algorithm 7
+    ctx = seed + idx.to_bytes(2, "little")
     out = hashlib.shake_256(ctx)
 
     # 需要 2η 位/系数 → 2η*n 位 → ceil(2η*n/8) 字节
@@ -119,7 +119,7 @@ def cbd(seed: bytes, eta: int, n: int, idx: int) -> np.ndarray:
     return coeffs
 
 
-# ── KeyGen (FIPS 204 §4.2) ───────────────────────────────────────────────────
+# ── KeyGen (FIPS 204 Algorithm 1) ─────────────────────────────────────────────
 
 def keygen(params_name: str = "toy", seed: bytes | None = None,
            params: dict | None = None):
@@ -128,44 +128,49 @@ def keygen(params_name: str = "toy", seed: bytes | None = None,
     输入: seed (32 字节，若为 None 则随机生成)
     输出: (rho, s1, s2, t, A)
 
-    流程:
+    流程 (严格按 FIPS 204 Algorithm 6):
       1. ξ = seed (32 字节)
-      2. ρ = H(ξ, 0, 64)[:32]   (ExpandA 种子)
-      3. ρ' = H(ξ, 1, 64)[:32]  (CBD 种子的前半)
-      4. K = H(ξ, 2, 64)[:32]   (CBD 种子的后半)
-      5. A = ExpandA(ρ)
-      6. s1, s2 = CBD(ρ' || K)
-      7. t = A·s1 + s2
-
-    注意: 当前实现简化了步骤 2-4，直接用 seed 作为 ρ，
-    独立随机采样 s1/s2。这不影响格攻击框架的正确性，
-    但与 NIST KAT 不一致（KAT 验证需要完整流程）。
+      2. (ρ, ρ', K) = H(ξ || k || l, 128)  — SHAKE256 输出 128 字节
+         - ρ  = output[:32]    (ExpandA 种子, 32 字节)
+         - ρ' = output[32:96]  (ExpandS 种子, 64 字节)
+         - K  = output[96:128] (存入 SK, KeyGen 中不使用)
+      3. A = ExpandA(ρ)
+      4. s1 = ExpandS(ρ', 0..l-1)  — CBD(η) with ρ'
+      5. s2 = ExpandS(ρ', l..l+k-1) — CBD(η) with ρ'
+      6. t = A·s1 + s2
     """
     p = params if params is not None else get_params(params_name)
     k, l, n, q, eta = p["k"], p["l"], p["n"], p["q"], p["eta"]
 
     # 1. 种子
     if seed is None:
-        rho = os.urandom(32)
+        xi = os.urandom(32)
     else:
-        rho = seed[:32] if len(seed) >= 32 else seed.ljust(32, b"\x00")
+        xi = seed[:32] if len(seed) >= 32 else seed.ljust(32, b"\x00")
 
-    # 2. ExpandA
+    # 2. FIPS 204 Algorithm 6: (ρ, ρ', K) = H(ξ || k || l, 128)
+    #    H = SHAKE256, 域分离: ξ || byte(k) || byte(l)
+    #    ρ' = 64 字节 (用于 CBD 采样)
+    seed_domain_sep = xi + bytes([k]) + bytes([l])
+    h_out = hashlib.shake_256(seed_domain_sep).digest(128)
+    rho = h_out[:32]        # 用于 ExpandA (32 bytes)
+    rho_prime = h_out[32:96]  # 用于 ExpandS (64 bytes)
+    # K = h_out[96:128]       # 存入 SK, KeyGen 中不使用
+
+    # 3. ExpandA
     A = expand_a(rho, k, l, n, q)
 
-    # 3. CBD 采样 (使用 SHAKE256)
-    # 用 ρ 作为 CBD 种子的简化版本
-    # 完整 FIPS 204 需要 ρ' 和 K，此处用 ρ 的不同偏移
-    cbd_seed = hashlib.shake_256(rho + b"CBD").digest(64)
-
+    # 4. ExpandS: s1 = CBD(ρ', η, j) for j in 0..l-1
     s1 = np.zeros((l, n), dtype=np.int64)
-    s2 = np.zeros((k, n), dtype=np.int64)
     for j in range(l):
-        s1[j] = cbd(cbd_seed, eta, n, j)
-    for i in range(k):
-        s2[i] = cbd(cbd_seed, eta, n, l + i)
+        s1[j] = cbd(rho_prime, eta, n, j)
 
-    # 4. t = A·s1 + s2 (多项式乘法 mod x^n+1)
+    # 5. ExpandS: s2 = CBD(ρ', η, l+i) for i in 0..k-1
+    s2 = np.zeros((k, n), dtype=np.int64)
+    for i in range(k):
+        s2[i] = cbd(rho_prime, eta, n, l + i)
+
+    # 6. t = A·s1 + s2 (多项式乘法 mod x^n+1)
     from .poly_math import mat_vec_mul, vec_add_mod
     t = vec_add_mod(mat_vec_mul(A, s1, q), s2, q)
 

@@ -192,18 +192,31 @@ def _decode_spki_with_params(spki_der: bytes, use_toy: bool = False) -> tuple:
     bs_contents = bs.contents
     pk_encoded = bs_contents[1:]  # 跳过 unused_bits 前缀
 
-    n_coeff_bits = t1_coeff_bits(d)
+    n_coeff_bits = t1_coeff_bits(d, params.get("q", 8380417))
     expected_len = 32 + (k * n * n_coeff_bits + 7) // 8
     if len(pk_encoded) != expected_len:
-        raise ValueError(
-            f"公钥数据长度不匹配: 期望 {expected_len} 字节, "
-            f"实际 {len(pk_encoded)} 字节"
-        )
+        # liboqs 统一使用 10 bits/coeff 编码 t1，与 FIPS 204 不同
+        # 尝试用 10 bits 解码
+        n_coeff_bits_alt = 10
+        alt_len = 32 + (k * n * n_coeff_bits_alt + 7) // 8
+        if len(pk_encoded) == alt_len:
+            n_coeff_bits = n_coeff_bits_alt
+        else:
+            # 尝试从数据长度反推 bits/coeff
+            t1_data_len = len(pk_encoded) - 32
+            if t1_data_len > 0 and (t1_data_len * 8) % (k * n) == 0:
+                n_coeff_bits = (t1_data_len * 8) // (k * n)
+            else:
+                raise ValueError(
+                    f"公钥数据长度不匹配: 期望 {expected_len} 字节, "
+                    f"实际 {len(pk_encoded)} 字节"
+                )
 
     rho = pk_encoded[:32]
     t1_byte_len = (k * n * n_coeff_bits + 7) // 8
     t1_bytes = pk_encoded[32:32 + t1_byte_len]
-    t1 = unpack_t1(t1_bytes, k, n, d=d)
+    t1 = unpack_t1(t1_bytes, k, n, d=d, q=params.get("q", 8380417),
+                    n_coeff_bits=n_coeff_bits)
 
     params["q"] = 8380417  # ML-DSA 标准 q
     return rho, t1, params

@@ -324,20 +324,22 @@ def main():
     logger.info(f"  s2: shape={s2.shape}, min={s2.min()}, max={s2.max()}, norm={np.linalg.norm(s2.flatten()):.2f}")
     logger.info(f"  密钥生成耗时: {keygen_time:.3f}s")
 
-    # Save to DER
-    der_size = save_public_key(pub_path, rho, t)
-    logger.info(f"  公钥已写入: {pub_path} ({der_size} bytes)")
+    # Power2Round: 保存 t1 (FIPS 204 §6.2)
+    adapter_save = ProtocolAdapter(d=d_param, q=q)
+    t1_save, _, _ = adapter_save.encode(t)
+    der_size = save_public_key(pub_path, rho, t1_save, d=d_param, q=q)
+    logger.info(f"  公钥 (ρ, t1) 已写入: {pub_path} ({der_size} bytes, d={d_param})")
     step_done()
 
     # ── [2/5] 解析公钥 ──
     logger.info("[2/5] 解析公钥...")
     t0 = time.time()
-    rho_parsed, t_parsed = load_public_key(pub_path, k, n)
+    rho_parsed, t1_parsed = load_public_key(pub_path, k, n, d=d_param, q=q)
     parse_time = time.time() - t0
     assert rho_parsed == rho, "ρ 不匹配!"
-    assert np.array_equal(t_parsed, t), "t 不匹配!"
+    assert np.array_equal(t1_parsed, t1_save), "t1 不匹配!"
     logger.info(f"  ρ 解析一致 ✓")
-    logger.info(f"  t 解析一致 ✓")
+    logger.info(f"  t1 解析一致 ✓")
     logger.info(f"  解析耗时: {parse_time:.4f}s")
 
     # Rebuild A from ρ

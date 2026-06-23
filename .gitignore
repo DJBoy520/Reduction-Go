@@ -9,3 +9,5 @@ cysignals_crash_logs/
 certs/
 run.pid
 cert.pem
+*_private.npz
+mldsa44_*.pem
