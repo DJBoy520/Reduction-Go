@@ -109,7 +109,7 @@ def parse_args():
     )
     parser.add_argument(
         "--d", type=int, default=None,
-        help="Power2Round 的 d 参数 (低位比特数)。ML-DSA-44:10, ML-DSA-65/87:13"
+        help="Power2Round 的 d 参数 (低位比特数)。ML-DSA-44/65/87:13"
     )
     parser.add_argument(
         "--cert", type=str, default=None,

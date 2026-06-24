@@ -30,7 +30,7 @@ def main():
     parser.add_argument("--params", default="easy", help="参数集 (默认: easy)")
     parser.add_argument("--mldsa", default=None,
                         choices=["ML-DSA-44", "ML-DSA-65", "ML-DSA-87"])
-    parser.add_argument("--d", type=int, default=10, help="Power2Round d (默认: 10)")
+    parser.add_argument("--d", type=int, default=13, help="Power2Round d (默认: 13)")
     parser.add_argument("--n", type=int, default=None, help="覆盖多项式维度 n")
     parser.add_argument("--seed", type=int, default=None, help="随机种子")
     parser.add_argument("--format", choices=["pem", "der"], default="pem")
