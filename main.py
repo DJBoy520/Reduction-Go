@@ -157,8 +157,10 @@ def _run_cert_attack(args):
     # 攻击参数
     bkz_block_size = args.bkz_block_size if args.bkz_block_size is not None else 20
     bkz_max_loops = args.bkz_max_loops if args.bkz_max_loops is not None else 8
+    bkz_threads = 6
     no_bkz = args.no_bkz
     lll_delta = args.lll_delta
+    bkz_auto_abort = args.bkz_auto_abort
     float_type = args.float_type if args.float_type is not None else "mpfr"
     precision = args.precision if args.precision is not None else 200
 
@@ -178,8 +180,10 @@ def _run_cert_attack(args):
         A, t_recon, q, s1_dummy, s2_dummy,
         bkz_block_size=bkz_block_size,
         bkz_max_loops=bkz_max_loops,
+        bkz_threads=bkz_threads,
         no_bkz=no_bkz,
         lll_delta=lll_delta,
+        bkz_auto_abort=bkz_auto_abort,
         float_type=float_type,
         precision=precision,
     )
@@ -283,7 +287,7 @@ def main():
     float_type = args.float_type if args.float_type is not None else p.get("float_type", "mpfr")
     precision = args.precision if args.precision is not None else p.get("precision", 200)
     use_slack = args.slack
-    d_param = args.d if args.d is not None else D_BY_PARAMS.get(params_name, 10)
+    d_param = args.d if args.d is not None else D_BY_PARAMS.get(params_name, 13)
 
     logger.info(f"参数: k={k}, l={l}, n={n}, q={q}, η={eta}")
     if use_slack:
@@ -303,7 +307,7 @@ def main():
         logger.info(f"浮点精度: {float_type}")
 
     out_dir = os.path.dirname(os.path.abspath(__file__))
-    pub_path = os.path.join(out_dir, "toy_pub.der")
+    pub_path = os.path.join(out_dir, "certs", "toy_pub.der")
 
     # ── 进度条 ──
     pbar = _tqdm(total=5, desc="进度", unit="步") if HAS_TQDM else None

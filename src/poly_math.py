@@ -2,8 +2,8 @@
 Polynomial arithmetic in Z_q[x] / (x^n + 1)。
 
 策略:
-  - n ≤ 64: school-book O(n²) 卷积 (足够快)
-  - n = 256 (标准 ML-DSA): 使用 NTT (O(n log n))
+  - n ≤ 128: school-book O(n²) 卷积
+  - n > 128: 使用 NTT (O(n log n))
 """
 
 import numpy as np

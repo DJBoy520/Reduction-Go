@@ -226,7 +226,7 @@ def verify_cert_signature(cert_der: bytes, variant: str) -> bool:
 
 
 def main():
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "certs")
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "certs")
     os.makedirs(output_dir, exist_ok=True)
 
     variants = ["ML-DSA-44", "ML-DSA-65", "ML-DSA-87"]

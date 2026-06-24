@@ -6,9 +6,8 @@ FIPS 204 §6.2 (Public Key Encoding)
 公钥 PK = (rho, t1)，编码为:
     PK_encoded = rho || t1_enc
     - rho: 32 字节种子
-    - t1_enc: t1 系数按 ⌈log₂(⌊(q-1)/2ᵈ⌋+1)⌉-bit 打包
-      ML-DSA-44 (d=10): 13 bits/系数
-      ML-DSA-65/87 (d=13): 10 bits/系数
+    - t1_enc: t1 系数按 10-bit 打包 (所有 ML-DSA 变体, d=13)
+      ⌈log₂(⌊(q-1)/2¹³⌋+1)⌉ = ⌈log₂(1024)⌉ = 10 bits/系数
 
 X.509 SubjectPublicKeyInfo 结构:
     SubjectPublicKeyInfo ::= SEQUENCE {
@@ -144,8 +143,9 @@ class _SubjectPublicKeyInfo(Sequence):
 
 # ── 编码/解码 ────────────────────────────────────────────────────────────────
 
-# ML-DSA-44: d=10, bits=13; ML-DSA-65/87: d=13, bits=10
-_MLDSA_D = {"ML-DSA-44": 10, "ML-DSA-65": 13, "ML-DSA-87": 13}
+# FIPS 204 最终版: 所有 ML-DSA 变体 d=13, t1 编码 10 bits/系数
+# (旧 Dilithium 草案 ML-DSA-44 用 d=10, 已被 FIPS 204 替代)
+_MLDSA_D = {"ML-DSA-44": 13, "ML-DSA-65": 13, "ML-DSA-87": 13}
 
 
 def encode_spki(rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65", d: int = None) -> bytes:
@@ -157,7 +157,7 @@ def encode_spki(rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65", d: in
         raise ValueError(f"rho 必须 32 字节，实际 {len(rho)} 字节")
     oid = MLDSA_OIDS[mldsa_name]
     if d is None:
-        d = _MLDSA_D.get(mldsa_name, 10)
+        d = _MLDSA_D.get(mldsa_name, 13)
     t1_bytes = pack_t1(t1, d=d)
     pk_encoded = rho + t1_bytes
 
@@ -170,7 +170,7 @@ def encode_spki(rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65", d: in
 def decode_spki(der_data: bytes, k: int, n: int, d: int = None) -> tuple:
     """从 SubjectPublicKeyInfo DER 解码公钥。
 
-    d 默认从 OID 推断 (ML-DSA-44→10, ML-DSA-65/87→13)。
+    d 默认从 OID 推断 (所有变体 d=13)。
     Returns: (rho, t1, mldsa_name)
     """
     spki = _SubjectPublicKeyInfo.load(der_data)
@@ -178,7 +178,7 @@ def decode_spki(der_data: bytes, k: int, n: int, d: int = None) -> tuple:
     mldsa_name = OID_TO_MLDSA.get(oid, f"unknown-{oid}")
 
     if d is None:
-        d = _MLDSA_D.get(mldsa_name, 10)
+        d = _MLDSA_D.get(mldsa_name, 13)
 
     bs = spki["subjectPublicKey"]
     if bs.unused_bits:

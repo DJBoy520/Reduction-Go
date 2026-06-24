@@ -46,7 +46,7 @@ MLDSA_PARAMS = {
     "ML-DSA-44": {
         "k": 4, "l": 4, "n": 256,
         "q": _MLDSA_Q, "eta": 2,
-        "d": 10, "tau": 39, "gamma1": (1 << 17), "gamma2": (_MLDSA_Q - 1) // 32,
+        "d": 13, "tau": 39, "gamma1": (1 << 17), "gamma2": (_MLDSA_Q - 1) // 32,
         "omega": 80,
         "bkz_block_size": 25, "bkz_max_loops": 8,
         "bkz_threads": 6, "use_bkz": True, "auto_abort": False,

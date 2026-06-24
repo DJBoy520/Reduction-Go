@@ -13,8 +13,8 @@ FIPS 204 §4.1 (Power2Round)
 还原：r = r1 · 2^d + r0  (mod q)   ← 用原始 r0
 误差约束：|r0c| ≤ 2^{d-1}           ← 用居中 r0c
 
-ML-DSA 参数中 d 的取值：
-  - ML-DSA-44: d = 10
+ML-DSA 参数中 d 的取值 (FIPS 204 最终版统一 d=13):
+  - ML-DSA-44: d = 13
   - ML-DSA-65: d = 13
   - ML-DSA-87: d = 13
 """
@@ -25,13 +25,13 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# FIPS 204 标准 d 值
+# FIPS 204 最终版: 所有 ML-DSA 变体 d=13
 D_BY_PARAMS = {
-    "ML-DSA-44": 10,
+    "ML-DSA-44": 13,
     "ML-DSA-65": 13,
     "ML-DSA-87": 13,
-    # toy 参数用较小的 d 做测试
-    "toy": 10,
+    # toy 参数用相同 d
+    "toy": 13,
     "easy": 10,
 }
 

@@ -29,7 +29,7 @@ def generate_self_signed_cert(
     output_path: str,
     mldsa_name: str = "ML-DSA-65",
     params_name: str = "easy",
-    d: int = 10,
+    d: int = 13,
     seed: int | None = None,
     fmt: str = "pem",
 ):
@@ -126,7 +126,7 @@ def main():
     parser.add_argument("--mldsa", default=None,
                         choices=["ML-DSA-44", "ML-DSA-65", "ML-DSA-87"],
                         help="ML-DSA 变体 (默认: 按 k 自动选择)")
-    parser.add_argument("--d", type=int, default=10, help="Power2Round d (默认: 10)")
+    parser.add_argument("--d", type=int, default=13, help="Power2Round d (默认: 13)")
     parser.add_argument("--seed", type=int, default=None, help="随机种子")
     parser.add_argument("--format", choices=["pem", "der"], default="pem",
                         help="输出格式 (默认: pem)")
