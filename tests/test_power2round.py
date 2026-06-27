@@ -10,8 +10,8 @@ from src.protocol_adapter import (
     ProtocolAdapter, power2round_encode, power2round_decode,
     get_error_bound
 )
-from src.keygen import keygen
-from src.params import get_params, get_d
+from src.keys.keygen import keygen
+from src.utils.params import get_params, get_d
 
 
 def test_roundtrip():

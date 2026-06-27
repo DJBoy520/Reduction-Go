@@ -21,13 +21,13 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
-from src.params import get_params, get_d
-from src.keygen import keygen, expand_a
-from src.pubkey import save_public_key, load_public_key
+from .utils.params import get_params, get_d
+from .keys.keygen import keygen, expand_a
+from .keys.pubkey import save_public_key, load_public_key
 from src.lattice_attack import run_attack as _lattice_run_attack, classify_results, verify_basis
 from src.protocol_adapter import ProtocolAdapter
 from src.poly_math import mat_vec_mul, vec_add_mod
-from src.cert_parser import parse_certificate
+from .keys.cert_parser import parse_certificate
 from src.progress import print_estimate
 
 logger = logging.getLogger(__name__)

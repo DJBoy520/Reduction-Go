@@ -19,14 +19,14 @@ from asn1crypto.core import (
 
 # DER 构建工具和 OID 从公共模块引用
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.der_utils import (
+from src.keys.der_utils import (
     build_der_sequence, build_der_set,
     build_der_bitstring, build_der_octet_string,
     build_der_oid, build_der_null, build_der_integer,
     build_der_utc_time, build_der_context_specific,
     build_name,
 )
-from src.params import MLDSA_OIDS
+from src.utils.params import MLDSA_OIDS
 
 
 # ── 证书生成 ──────────────────────────────────────────────────────────────────

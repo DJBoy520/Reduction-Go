@@ -14,7 +14,7 @@ import os
 
 import numpy as np
 
-from .params import get_params
+from ..utils.params import get_params
 
 
 # ── ExpandA (FIPS 204 §4.2.2) ────────────────────────────────────────────────
@@ -171,7 +171,7 @@ def keygen(params_name: str = "toy", seed: bytes | None = None,
         s2[i] = cbd(rho_prime, eta, n, l + i)
 
     # 6. t = A·s1 + s2 (多项式乘法 mod x^n+1)
-    from .poly_math import mat_vec_mul, vec_add_mod
+    from ..poly_math import mat_vec_mul, vec_add_mod
     t = vec_add_mod(mat_vec_mul(A, s1, q), s2, q)
 
     return rho, s1, s2, t, A

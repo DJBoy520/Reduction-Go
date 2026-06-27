@@ -26,7 +26,7 @@ from .spki import (
     unpack_t1, t1_coeff_bits,
     _SubjectPublicKeyInfo,
 )
-from .params import MLDSA_REGISTRY
+from ..utils.params import MLDSA_REGISTRY
 
 logger = logging.getLogger(__name__)
 

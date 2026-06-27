@@ -19,10 +19,10 @@ import numpy as np
 # 确保可以导入 src
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.params import get_params, mldsa_from_k
-from src.keygen import keygen, expand_a
+from ..utils.params import get_params, mldsa_from_k
+from .keygen import keygen, expand_a
 from src.protocol_adapter import ProtocolAdapter
-from src.spki import encode_spki, save_spki_pem, save_spki_der, MLDSA_OIDS
+from .spki import encode_spki, save_spki_pem, save_spki_der, MLDSA_OIDS
 
 
 def generate_self_signed_cert(

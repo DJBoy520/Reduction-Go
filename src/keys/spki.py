@@ -27,7 +27,7 @@ from asn1crypto import pem as asn1pem
 from asn1crypto.core import Sequence, ObjectIdentifier, Null, BitString
 
 # OID 和 d 值统一从 params.py 引用
-from .params import MLDSA_OIDS, OID_TO_MLDSA, MLDSA_REGISTRY
+from ..utils.params import MLDSA_OIDS, OID_TO_MLDSA, MLDSA_REGISTRY
 # DER 构建工具从 der_utils.py 引用
 from .der_utils import (
     build_der_sequence as _build_der_sequence,

@@ -21,7 +21,7 @@ import sys
 import numpy as np
 
 from src.api import AttackConfig, run_attack
-from src.logger import setup_logging
+from src.utils.logger import setup_logging
 
 logger = logging.getLogger(__name__)
 
