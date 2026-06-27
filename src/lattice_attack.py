@@ -23,7 +23,7 @@ import time
 
 import numpy as np
 
-from fpylll import IntegerMatrix, LLL, BKZ, FPLLL
+from .lattice_reduction import lll_reduce, bkz_reduce
 
 from .poly_math import mat_vec_mul, vec_add_mod
 from .progress import LLLProgress, BKZProgress
@@ -55,13 +55,16 @@ def _build_A_flat(A: np.ndarray) -> np.ndarray:
     return A_flat
 
 
-def build_lattice_basis(A: np.ndarray, t: np.ndarray, q: int) -> IntegerMatrix:
+def build_lattice_basis(A: np.ndarray, t: np.ndarray, q: int) -> np.ndarray:
     """构造 Kannan 嵌入格基矩阵。
 
     Args:
         A: 多项式矩阵 (k, l, n)
         t: 目标向量 (标准模式用完整 t; Power2Round 模式用 t_recon = t1·2^d)
         q: 模数
+
+    Returns:
+        numpy int64 数组 (行向量基), shape (dim, dim)
     """
     k, l, n = A.shape
     kn = k * n
@@ -74,16 +77,13 @@ def build_lattice_basis(A: np.ndarray, t: np.ndarray, q: int) -> IntegerMatrix:
     # ── Standard Kannan Embedding ──
     dim = ln + kn + 1
 
-    B = IntegerMatrix(dim, dim)
+    B = np.zeros((dim, dim), dtype=np.int64)
 
     # 1. 左上角: I_{ln}
     for i in range(ln):
         B[i, i] = 1
 
     # 2. 中上角: -A_flat^T (转置)
-    #    _build_A_flat 输出 (kn, ln)，格基中按列放置即为转置
-    #    mat_vec_mul 实现的是 A_flat @ s1_flat，此处用 -A_flat^T 使
-    #    格向量中间块 = -A_flat·c1 + q·c2 + t·c3，与方程一致
     for i in range(ln):
         for j in range(kn):
             B[i, ln + j] = -int(A_flat[j, i])
@@ -134,11 +134,6 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
 
     Returns a dict with timing, results, and verification details.
     """
-    import os
-    # fpylll 0.6.4 不支持 BKZ.Param(threads=...)，用 OMP_NUM_THREADS 控制并行
-    if bkz_threads:
-        os.environ.setdefault("OMP_NUM_THREADS", str(bkz_threads))
-
     result = {}
     k, l, n = A.shape
     kn = k * n
@@ -158,16 +153,9 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
     # ── LLL ──
     logger.info(f"[4/5] LLL 约减 (维度 {dim}, {float_type}/{precision}bit)")
 
-    lll_kwargs = {"delta": lll_delta}
-    if float_type != "double":
-        FPLLL.set_precision(precision)
-        lll_kwargs["float_type"] = float_type
-        lll_kwargs["precision"] = precision
-        lll_kwargs["method"] = "proved"
-
     lll_progress = LLLProgress(dim, float_type, precision)
     lll_progress.start()
-    LLL.reduction(B, **lll_kwargs)
+    lll_reduce(B, delta=lll_delta, float_type=float_type, precision=precision)
     result["lll_time"] = lll_progress.finish()
     logger.info(f"    LLL 完成: {result['lll_time']:.3f}s")
 
@@ -192,54 +180,25 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
                                     float_type, precision)
         bkz_progress.start()
 
-        bkz_kwargs = {}
-        if float_type != "double":
-            bkz_kwargs["float_type"] = float_type
-            bkz_kwargs["precision"] = precision
-
         t_bkz = time.time()
-        completed_loops = 0
 
-        # fpylll 0.6.4 不支持 BKZ.Param(threads=...)，多线程不生效
-        # 如需并行可用 OMP_NUM_THREADS 环境变量
-        for loop_i in range(1, bkz_max_loops + 1):
-            param = BKZ.Param(
-                block_size=bkz_block_size,
-                max_loops=1,
-                auto_abort=False,
-            )
-            BKZ.reduction(B, param, **bkz_kwargs)
-            completed_loops = loop_i
+        bkz_result = bkz_reduce(
+            B,
+            block_size=bkz_block_size,
+            max_loops=bkz_max_loops,
+            enum_algo="1",
+            auto_abort=bkz_auto_abort,
+            float_type=float_type,
+            precision=precision,
+        )
 
-            # 从格基提取当前最短范数
-            try:
-                norms = []
-                for row_i in range(dim):
-                    row = [int(B[row_i, col]) for col in range(dim)]
-                    n_sq = sum(x * x for x in row)
-                    if n_sq > 0:
-                        norms.append(n_sq ** 0.5)
-                shortest = min(norms) if norms else 0.0
-            except Exception:
-                shortest = 0.0
-
+        # 更新进度显示
+        for loop_i, shortest in enumerate(bkz_result["shortest_norms"], 1):
             bkz_progress.update(loop_i, shortest_norm=shortest,
                                 real_norm=real_norm_for_ratio)
 
-            # auto_abort 检查: 连续无改善时提前退出
-            if bkz_auto_abort and loop_i > 2:
-                # 简单实现: 如果最短范数连续 2 轮没变小就停
-                if not hasattr(bkz_progress, "_prev_norms"):
-                    bkz_progress._prev_norms = []
-                bkz_progress._prev_norms.append(shortest)
-                if len(bkz_progress._prev_norms) >= 3:
-                    recent = bkz_progress._prev_norms[-3:]
-                    if recent[-1] >= recent[-2] >= recent[-3]:
-                        logger.info(f"    BKZ auto-abort: 连续无改善，提前终止于 loop {loop_i}")
-                        break
-
         result["bkz_time"] = bkz_progress.finish()
-        result["bkz_loops"] = completed_loops
+        result["bkz_loops"] = bkz_result["completed_loops"]
     logger.info(f"    BKZ 完成: {result['bkz_time']:.3f}s")
 
     # ── Extract candidates ──
@@ -273,7 +232,7 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
     W = 1
 
     for row_idx in range(dim):
-        row = [int(B[row_idx, col]) for col in range(dim)]
+        row = B[row_idx].tolist()
 
         # Kannan 嵌入: 最后一维是 W 或 -W
         weight = row[-1]
