@@ -37415,3 +37415,19 @@ label 352:
 2026-06-28 02:40:31 [DEBUG] src.lattice_attack:151 — 格基预估内存占用: 0.31 MB (201×201, int64)
 2026-06-28 02:40:31 [INFO] src.lattice_attack:154 — [4/5] LLL 约减 (维度 201, double/53bit)
 2026-06-28 02:40:31 [DEBUG] src.lattice_reduction.adapter.lll_adapter:57 — LLL 约减开始: dim=201, delta=0.79
+2026-06-28 02:48:41 [INFO] src.api:266 — ═══ ML-DSA 格攻击闭环测试 (参数集: toy) ═══
+2026-06-28 02:48:41 [INFO] src.api:267 — 参数: k=2, l=2, n=50, q=8380417, η=2
+2026-06-28 02:48:41 [INFO] src.api:268 — 格维度: 201
+2026-06-28 02:48:41 [INFO] src.api:278 — [1/5] 生成公钥...
+2026-06-28 02:48:41 [INFO] src.api:282 —   密钥生成耗时: 0.018s
+2026-06-28 02:48:41 [INFO] src.protocol_adapter:93 — ProtocolAdapter: d=13, error_bound=±4096 (2^12)
+2026-06-28 02:48:41 [INFO] src.api:290 —   公钥已写入: /home/dj/WorkSpaces/openclaw/Reduction-Go/certs/toy_pub.der
+2026-06-28 02:48:41 [INFO] src.api:293 — [2/5] 解析公钥...
+2026-06-28 02:48:41 [INFO] src.api:300 —   ρ, t1 解析一致 ✓
+2026-06-28 02:48:41 [INFO] src.api:304 —   A 矩阵重建一致 ✓
+2026-06-28 02:48:41 [INFO] src.lattice_attack:118 — verify_basis: A·s1 + s2_target ≡ t_target (mod q) ✓
+2026-06-28 02:48:41 [INFO] src.api:340 —   格基验证: ✓ v_target 在格中
+2026-06-28 02:48:41 [INFO] src.lattice_attack:144 — [3/5] 构造格基矩阵 (201×201)...
+2026-06-28 02:48:41 [DEBUG] src.lattice_attack:151 — 格基预估内存占用: 0.31 MB (201×201, int64)
+2026-06-28 02:48:41 [INFO] src.lattice_attack:154 — [4/5] LLL 约减 (维度 201, double/53bit)
+2026-06-28 02:48:41 [DEBUG] src.lattice_reduction.adapter.lll_adapter:54 — LLL 约减开始: dim=201, delta=0.79
