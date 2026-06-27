@@ -2,52 +2,36 @@ import numpy as np
 
 
 def gso_step(basis_slice, gs_coeff_matrix, gs_squared_norms, stage):
-    """Updates the Gram-Schmidt coefficient matrix and squared norms at a specific stage.
-    This function performs one step of the Gram-Schmidt orthogonalization process,
-    updating the entries in `gs_coeff_matrix` and `gs_squared_norms` corresponding
-    to the given `stage`. It is assumed that all entries up to `stage - 1` are already
-    correct and up to date. If `stage == 1`, the squared norm at index 0 is also updated.
+    """One step of Classical Gram-Schmidt with hybrid vectorization.
 
-    Uses the Classical Gram-Schmidt (CGS) formula with vectorized numpy operations.
+    Uses numpy vectorization for large stages, simple loops for small ones.
 
-    args:
-        basis_slice (np.ndarray):
-            2D NumPy array of shape (n, stage+1) — columns 0..stage of the basis.
+    CGS formula: μ_{j,k} = (⟨b_k, b_j⟩ - Σ_{i<j} μ_{i,j}·μ_{i,k}·||b*_i||²) / ||b*_j||²
 
-        gs_coeff_matrix (np.ndarray):
-            A 2D NumPy array of shape (stage+1, stage+1), representing the Gram-Schmidt
-            coefficients. Values at column `stage` may not be up to date.
+    Args:
+        basis_slice: (n, stage+1) — columns 0..stage of basis
+        gs_coeff_matrix: (stage+1, stage+1) — GSO coefficients
+        gs_squared_norms: (stage+1,) — GSO squared norms
+        stage: current stage index
 
-        gs_squared_norms (np.ndarray):
-            A 1D NumPy array of shape (stage+1,), representing the squared lengths of
-            the Gram-Schmidt vectors. The value at index `stage` may not be up to date.
-
-        stage (int):
-            The current stage index (0-based).
-
-    returns:
-        (tuple):
-            - gs_squared_norms (np.ndarray): Updated squared norms.
-            - gs_coeff_matrix (np.ndarray): Updated coefficient matrix.
+    Returns:
+        (gs_squared_norms[:stage+1], gs_coeff_matrix[:, :stage+1])
     """
     if stage == 1:
         gs_squared_norms[0] = np.dot(basis_slice[:, 0], basis_slice[:, 0])
 
     b_k = basis_slice[:, stage]
-
-    # Squared norm of b_k (will be reduced iteratively)
-    gs_squared_norms[stage] = np.dot(b_k, b_k)
-
-    # Cache references for inner loop
     gsc = gs_coeff_matrix
     gs = gs_squared_norms
 
-    for j in range(stage):
-        # dot_product = <b_k, b_j>
-        dot_product = np.dot(b_k, basis_slice[:, j])
+    # Initial squared norm
+    gs[stage] = np.dot(b_k, b_k)
 
-        # correction_term = Σ_{k<j} μ_{k,j} · μ_{k,stage} · ||b*_k||²
-        # Vectorized: dot product of (μ_{:,j} · ||b*_||²)[0:j] with μ_{:,stage}[0:j]
+    # Compute all dot products ⟨b_k, b_j⟩ for j < stage at once
+    dots = basis_slice[:, :stage].T @ b_k  # shape (stage,)
+
+    for j in range(stage):
+        # correction_term = Σ_{i<j} μ_{i,j} · μ_{i,stage} · ||b*_i||²
         if j > 0:
             correction_term = np.dot(
                 gsc[:j, j] * gs[:j],
@@ -56,11 +40,9 @@ def gso_step(basis_slice, gs_coeff_matrix, gs_squared_norms, stage):
         else:
             correction_term = 0.0
 
-        gsc[j, stage] = (dot_product - correction_term) / gs[j]
-
-        # Update squared norm: ||b*_stage||² -= μ_{j,stage}² · ||b*_j||²
+        gsc[j, stage] = (dots[j] - correction_term) / gs[j]
         gs[stage] -= gsc[j, stage] * gsc[j, stage] * gs[j]
 
     gsc[stage, stage] = 1.0
 
-    return gs_squared_norms[: stage + 1], gs_coeff_matrix[:, : stage + 1]
+    return gs[: stage + 1], gsc[:, : stage + 1]
