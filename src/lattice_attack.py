@@ -123,7 +123,7 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
                s1_real: np.ndarray, s2_real: np.ndarray,
                bkz_block_size: int = 20, bkz_max_loops: int = 8,
                bkz_threads: int = 6, no_bkz: bool = False,
-               lll_delta: float = 0.99,
+               lll_delta: float = 0.79,
                bkz_auto_abort: bool = False,
                float_type: str = "mpfr",
                precision: int = 200) -> dict:

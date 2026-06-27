@@ -72,7 +72,7 @@ def parse_args():
         help="多项式维度 n (覆盖配置文件)"
     )
     parser.add_argument(
-        "--lll-delta", dest="lll_delta", type=float, default=0.99,
+        "--lll-delta", dest="lll_delta", type=float, default=0.79,
         help="LLL 约减质量参数 delta (默认: 0.999)"
     )
     parser.add_argument(
