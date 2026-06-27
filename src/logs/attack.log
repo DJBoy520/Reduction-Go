@@ -1,0 +1,58 @@
+2026-06-28 00:31:05 [INFO] src.api:241 — ═══ ML-DSA 格攻击闭环测试 (参数集: toy) ═══
+2026-06-28 00:31:05 [INFO] src.api:242 — 参数: k=2, l=2, n=10, q=8380417, η=2
+2026-06-28 00:31:05 [INFO] src.api:243 — 格维度: 41
+2026-06-28 00:31:05 [INFO] src.api:253 — [1/5] 生成公钥...
+2026-06-28 00:31:05 [INFO] src.api:257 —   密钥生成耗时: 0.002s
+2026-06-28 00:31:05 [INFO] src.protocol_adapter:93 — ProtocolAdapter: d=13, error_bound=±4096 (2^12)
+2026-06-28 00:31:05 [INFO] src.api:265 —   公钥已写入: /home/dj/WorkSpaces/openclaw/Reduction-Go/certs/toy_pub.der
+2026-06-28 00:31:05 [INFO] src.api:268 — [2/5] 解析公钥...
+2026-06-28 00:31:05 [INFO] src.api:275 —   ρ, t1 解析一致 ✓
+2026-06-28 00:31:05 [INFO] src.api:279 —   A 矩阵重建一致 ✓
+2026-06-28 00:31:05 [INFO] src.lattice_attack:118 — verify_basis: A·s1 + s2_target ≡ t_target (mod q) ✓
+2026-06-28 00:31:05 [INFO] src.api:315 —   格基验证: ✓ v_target 在格中
+2026-06-28 00:31:05 [INFO] src.lattice_attack:144 — [3/5] 构造格基矩阵 (41×41)...
+2026-06-28 00:31:05 [DEBUG] src.lattice_attack:151 — 格基预估内存占用: 0.01 MB (41×41, int64)
+2026-06-28 00:31:05 [INFO] src.lattice_attack:154 — [4/5] LLL 约减 (维度 41, double/53bit)
+2026-06-28 00:31:05 [DEBUG] src.lattice_reduction.adapter.lll_adapter:54 — LLL 约减开始: dim=41, delta=0.999
+2026-06-28 00:31:17 [DEBUG] src.lattice_reduction.adapter.lll_adapter:72 — LLL 约减完成: dim=41
+2026-06-28 00:31:17 [INFO] src.lattice_attack:160 —     LLL 完成: 12.301s
+2026-06-28 00:31:17 [INFO] src.lattice_attack:164 — [5/5] BKZ 已跳过 (--no-bkz)
+2026-06-28 00:31:17 [INFO] src.lattice_attack:202 —     BKZ 完成: 0.000s
+2026-06-28 00:31:17 [INFO] src.lattice_attack:220 —     搜索候选短向量 (Kannan 嵌入)...
+2026-06-28 00:31:17 [CRITICAL] src.lattice_attack:276 — !!! 找到完美恢复私钥 !!! (行 0, 范数=6.4807)
+2026-06-28 00:31:17 [INFO] src.api:336 —   格基构造: 0.001s
+2026-06-28 00:31:17 [INFO] src.api:337 —   LLL:      12.301s
+2026-06-28 00:31:17 [INFO] src.api:338 —   BKZ:      0.000s
+2026-06-28 00:31:17 [INFO] src.api:339 —   真实私钥范数: 6.4807
+2026-06-28 00:31:17 [INFO] src.api:360 — ═══ 三层验证结果 (共 1 个候选) ═══
+2026-06-28 00:31:17 [INFO] src.api:361 —   完美恢复: 1, s1完美: 0, 替代: 0, 过长: 0, 无效: 0
+2026-06-28 00:31:17 [INFO] src.api:362 —   总耗时: 12.304s
+2026-06-28 00:31:17 [INFO] src.api:367 — ═══ 最佳候选 ═══
+2026-06-28 00:31:17 [INFO] src.api:368 —   s1': norm=4.90
+2026-06-28 00:31:17 [INFO] src.api:369 —   s2': norm=4.24
+2026-06-28 00:31:17 [INFO] src.api:371 —   ✓ 完美恢复私钥
+2026-06-28 00:31:17 [INFO] __main__:116 — ═══ 攻击结果汇总 ═══
+2026-06-28 00:31:17 [INFO] __main__:117 —   参数: toy, k=2, l=2, n=10
+2026-06-28 00:31:17 [INFO] __main__:118 —   格维度: 41
+2026-06-28 00:31:17 [INFO] __main__:119 —   耗时: keygen=0.002s, parse=0.000s, build=0.001s, LLL=12.301s, BKZ=0.000s
+2026-06-28 00:31:17 [INFO] __main__:121 —   总耗时: 12.304s
+2026-06-28 00:31:17 [INFO] __main__:122 —   候选统计: 完美=1, s1完美=0, 替代=0, 过长=0, 无效=0
+2026-06-28 00:31:17 [INFO] __main__:128 —   最佳候选: s1 norm=4.90, s2 norm=4.24, perfect=True
+2026-06-28 00:31:17 [INFO] __main__:175 —   摘要已写入: /home/dj/WorkSpaces/openclaw/Reduction-Go/logs/summary.txt
+2026-06-28 00:31:17 [INFO] __main__:227 — 完成。
+2026-06-28 00:31:51 [INFO] src.api:241 — ═══ ML-DSA 格攻击闭环测试 (参数集: toy) ═══
+2026-06-28 00:31:51 [INFO] src.api:242 — 参数: k=2, l=2, n=50, q=8380417, η=2
+2026-06-28 00:31:51 [INFO] src.api:243 — 格维度: 201
+2026-06-28 00:31:51 [INFO] src.api:253 — [1/5] 生成公钥...
+2026-06-28 00:31:51 [INFO] src.api:257 —   密钥生成耗时: 0.018s
+2026-06-28 00:31:51 [INFO] src.protocol_adapter:93 — ProtocolAdapter: d=13, error_bound=±4096 (2^12)
+2026-06-28 00:31:51 [INFO] src.api:265 —   公钥已写入: /home/dj/WorkSpaces/openclaw/Reduction-Go/certs/toy_pub.der
+2026-06-28 00:31:51 [INFO] src.api:268 — [2/5] 解析公钥...
+2026-06-28 00:31:51 [INFO] src.api:275 —   ρ, t1 解析一致 ✓
+2026-06-28 00:31:51 [INFO] src.api:279 —   A 矩阵重建一致 ✓
+2026-06-28 00:31:51 [INFO] src.lattice_attack:118 — verify_basis: A·s1 + s2_target ≡ t_target (mod q) ✓
+2026-06-28 00:31:51 [INFO] src.api:315 —   格基验证: ✓ v_target 在格中
+2026-06-28 00:31:51 [INFO] src.lattice_attack:144 — [3/5] 构造格基矩阵 (201×201)...
+2026-06-28 00:31:51 [DEBUG] src.lattice_attack:151 — 格基预估内存占用: 0.31 MB (201×201, int64)
+2026-06-28 00:31:51 [INFO] src.lattice_attack:154 — [4/5] LLL 约减 (维度 201, double/53bit)
+2026-06-28 00:31:51 [DEBUG] src.lattice_reduction.adapter.lll_adapter:54 — LLL 约减开始: dim=201, delta=0.999
