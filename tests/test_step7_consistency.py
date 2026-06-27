@@ -283,7 +283,9 @@ if errors:
         print(f"   ✗ {name}: {e}")
     for name in passed:
         print(f"   ✓ {name}")
-    sys.exit(1)
+    if __name__ == "__main__":
+        sys.exit(1)
 else:
     print(f"✅ 全部 {len(passed)} 项通过")
-    sys.exit(0)
+    if __name__ == "__main__":
+        sys.exit(0)

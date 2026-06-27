@@ -3,44 +3,44 @@ import numpy as np
 
 def enum_se_solver(basis_block, gs_squared_norms, gs_coeffs):
     """Performs shortest vector enumeration using the Schnorr–Euchner strategy for
-	lattice basis reduction within a given block.
+    lattice basis reduction within a given block.
 
-	This algorithm enumerates integer coefficient combinations for the basis vectors
-	in `basis_block` to find the shortest non-zero lattice vector in the sublattice
-	spanned by the block. It improves upon naive enumeration by using controlled
-	stepping and pruning based on Gram-Schmidt norms, as described in Schnorr &
-	Euchner (1994).
+    This algorithm enumerates integer coefficient combinations for the basis vectors
+    in `basis_block` to find the shortest non-zero lattice vector in the sublattice
+    spanned by the block. It improves upon naive enumeration by using controlled
+    stepping and pruning based on Gram-Schmidt norms, as described in Schnorr &
+    Euchner (1994).
 
-	Args:
-	    basis_block (np.ndarray):
-	        A 2D array of shape (dimension, block_size) representing the lattice basis
-	        vectors for the current block.
-	    gs_squared_norms (np.ndarray):
-	        A 1D array of length `block_size` containing the squared norms of the
-	        Gram-Schmidt orthogonalized basis vectors. Used for pruning during enumeration.
-	    gs_coeffs (np.ndarray):
-	        A 2D array of shape (dimension, block_size) containing Gram-Schmidt
-	        coefficients for projections between basis vectors.
+    Args:
+        basis_block (np.ndarray):
+            A 2D array of shape (dimension, block_size) representing the lattice basis
+            vectors for the current block.
+        gs_squared_norms (np.ndarray):
+            A 1D array of length `block_size` containing the squared norms of the
+            Gram-Schmidt orthogonalized basis vectors. Used for pruning during enumeration.
+        gs_coeffs (np.ndarray):
+            A 2D array of shape (dimension, block_size) containing Gram-Schmidt
+            coefficients for projections between basis vectors.
 
-	Returns:
-	    (tuple):
-	        - search_radius (float): The smallest squared norm found during enumeration.
-	        - u (np.ndarray): A 1D array of length `block_size` representing the integer
-	          coefficient vector corresponding to the shortest lattice vector found.
+    Returns:
+        (tuple):
+            - search_radius (float): The smallest squared norm found during enumeration.
+            - u (np.ndarray): A 1D array of length `block_size` representing the integer
+              coefficient vector corresponding to the shortest lattice vector found.
 
-	Notes:
-	    - Implements the Schnorr–Euchner enumeration algorithm, which uses a depth-first
-	      search with controlled stepping (`delta`, `tri`) to efficiently explore the
-	      enumeration tree.
-	    - The pruning condition is based on comparing the partial squared norm
-	      (`tilde_c[t]`) to the best found so far (`search_radius`).
-	    - The algorithm uses rounding and adaptive stepping to minimize redundant search
-	      paths and improve practical performance.
+    Notes:
+        - Implements the Schnorr–Euchner enumeration algorithm, which uses a depth-first
+          search with controlled stepping (`delta`, `tri`) to efficiently explore the
+          enumeration tree.
+        - The pruning condition is based on comparing the partial squared norm
+          (`tilde_c[t]`) to the best found so far (`search_radius`).
+        - The algorithm uses rounding and adaptive stepping to minimize redundant search
+          paths and improve practical performance.
 
-	References:
-	    Claus-Peter Schnorr and Martin Euchner,
-	    "Lattice basis reduction: Improved practical algorithms and solving subset sum problems",
-	    Mathematical Programming, 1994.
+    References:
+        Claus-Peter Schnorr and Martin Euchner,
+        "Lattice basis reduction: Improved practical algorithms and solving subset sum problems",
+        Mathematical Programming, 1994.
     """
     k = len(basis_block[0]) - 1
     tilde_c = np.zeros(k + 2)  # Partial squared norms during enumeration

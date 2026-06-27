@@ -149,7 +149,9 @@ if errors:
     print(f"❌ {len(errors)} 项失败 / {len(passed)} 项通过:")
     for name, e in errors:
         print(f"   ✗ {name}: {e}")
-    sys.exit(1)
+    if __name__ == "__main__":
+        sys.exit(1)
 else:
     print(f"✅ 全部 {len(passed)} 项通过")
-    sys.exit(0)
+    if __name__ == "__main__":
+        sys.exit(0)

@@ -51,7 +51,7 @@ class AttackConfig:
     no_bkz: bool = False
     bkz_block_size: Optional[int] = None
     bkz_max_loops: Optional[int] = None
-    bkz_threads: Optional[int] = None
+    bkz_threads: Optional[int] = None  # 预留：纯 Python BKZ 暂不支持多线程
     bkz_auto_abort: bool = False
     lll_delta: float = 0.999
 

@@ -37,6 +37,8 @@ def bkz_reduce(B: np.ndarray, block_size: int = 20, max_loops: int = 8,
     上游 BKZ 是单轮完整约减（内部已包含 LLL + 多轮 SVP 枚举）。
     为兼容 max_loops 控制，循环调用上游 BKZ，每轮检查改善情况。
 
+    Note: bkz_threads 当前无效，纯 Python 实现为单线程。
+
     Args:
         B: numpy int64 数组 (行向量基), 原地修改
         block_size: BKZ 块大小
