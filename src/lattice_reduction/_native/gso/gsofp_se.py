@@ -1,12 +1,13 @@
 import numpy as np
 
+from ..jit_compat import jit_available
+from ..jit_functions import gso_step_jit
+
 
 def gso_step(basis_slice, gs_coeff_matrix, gs_squared_norms, stage):
-    """One step of Classical Gram-Schmidt with hybrid vectorization.
+    """GSO single step with optional Numba JIT acceleration.
 
-    Uses numpy vectorization for large stages, simple loops for small ones.
-
-    CGS formula: μ_{j,k} = (⟨b_k, b_j⟩ - Σ_{i<j} μ_{i,j}·μ_{i,k}·||b*_i||²) / ||b*_j||²
+    Falls back to pure Python if Numba is not available.
 
     Args:
         basis_slice: (n, stage+1) — columns 0..stage of basis
@@ -17,26 +18,32 @@ def gso_step(basis_slice, gs_coeff_matrix, gs_squared_norms, stage):
     Returns:
         (gs_squared_norms[:stage+1], gs_coeff_matrix[:, :stage+1])
     """
+    if jit_available:
+        gso_step_jit(
+            basis_slice.astype(np.float64),
+            gs_coeff_matrix,
+            gs_squared_norms,
+            stage,
+        )
+    else:
+        _gso_step_python(basis_slice, gs_coeff_matrix, gs_squared_norms, stage)
+
+    return gs_squared_norms[: stage + 1], gs_coeff_matrix[:, : stage + 1]
+
+
+def _gso_step_python(basis_slice, gsc, gs, stage):
+    """Pure Python GSO step (fallback)."""
     if stage == 1:
-        gs_squared_norms[0] = np.dot(basis_slice[:, 0], basis_slice[:, 0])
+        gs[0] = np.dot(basis_slice[:, 0], basis_slice[:, 0])
 
     b_k = basis_slice[:, stage]
-    gsc = gs_coeff_matrix
-    gs = gs_squared_norms
-
-    # Initial squared norm
     gs[stage] = np.dot(b_k, b_k)
 
-    # Compute all dot products ⟨b_k, b_j⟩ for j < stage at once
-    dots = basis_slice[:, :stage].T @ b_k  # shape (stage,)
+    dots = basis_slice[:, :stage].T @ b_k
 
     for j in range(stage):
-        # correction_term = Σ_{i<j} μ_{i,j} · μ_{i,stage} · ||b*_i||²
         if j > 0:
-            correction_term = np.dot(
-                gsc[:j, j] * gs[:j],
-                gsc[:j, stage]
-            )
+            correction_term = np.dot(gsc[:j, j] * gs[:j], gsc[:j, stage])
         else:
             correction_term = 0.0
 
@@ -44,5 +51,3 @@ def gso_step(basis_slice, gs_coeff_matrix, gs_squared_norms, stage):
         gs[stage] -= gsc[j, stage] * gsc[j, stage] * gs[j]
 
     gsc[stage, stage] = 1.0
-
-    return gs[: stage + 1], gsc[:, : stage + 1]

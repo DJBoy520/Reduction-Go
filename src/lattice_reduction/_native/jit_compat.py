@@ -1,0 +1,31 @@
+"""
+Numba JIT 加速工具模块。
+
+提供可选的 JIT 编译加速。无 Numba 环境时自动降级为纯 Python，不影响功能。
+
+用法：
+    from src.lattice_reduction._native.jit_compat import njit, jit_available
+
+    @njit
+    def hot_function(...):
+        ...
+"""
+
+try:
+    from numba import njit as _njit
+    jit_available = True
+
+    def njit(func=None, **kwargs):
+        """Numba njit 装饰器，强制 nopython 模式。"""
+        if func is not None:
+            return _njit(func, **kwargs)
+        return _njit(**kwargs)
+
+except ImportError:
+    jit_available = False
+
+    def njit(func=None, **kwargs):
+        """无 Numba 时的降级装饰器（无操作）。"""
+        if func is not None:
+            return func
+        return lambda f: f

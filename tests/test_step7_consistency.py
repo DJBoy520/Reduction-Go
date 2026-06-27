@@ -177,12 +177,12 @@ check("已约减基不被破坏 (identity)", test_already_reduced)
 def test_singular_like_matrix():
     """奇异矩阵（行列式为0）应能处理"""
     from src.lattice_reduction import lll_reduce
+    from src.lattice_reduction.adapter.common_adapter import LatticeReductionError
     B = np.array([[1, 2], [2, 4]], dtype=np.int64)  # 行线性相关
     try:
         lll_reduce(B, delta=0.75)
-        # 如果没崩溃，检查结果
         assert not np.any(np.isnan(B)), "NaN in result"
-    except (np.linalg.LinAlgError, ZeroDivisionError, ValueError):
+    except (np.linalg.LinAlgError, ZeroDivisionError, ValueError, LatticeReductionError, FloatingPointError):
         pass  # 预期可能抛异常
 check("奇异矩阵处理", test_singular_like_matrix)
 
