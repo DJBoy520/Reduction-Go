@@ -9,7 +9,7 @@ import numpy as np
 from .jit_compat import njit
 
 
-@njit
+@njit(cache=True)
 def gso_step_jit(basis_slice, gsc, gs, stage):
     """GSO 单步计算（JIT 加速版）。
 
@@ -46,7 +46,7 @@ def gso_step_jit(basis_slice, gsc, gs, stage):
     gsc[stage, stage] = 1.0
 
 
-@njit
+@njit(cache=True)
 def size_reduction_jit(gsc_col, gsc_mat, basis_col, basis_mat, stage, tau_limit):
     """尺寸缩减核心（JIT 加速版）。"""
     threshold = 0.5
@@ -69,7 +69,7 @@ def size_reduction_jit(gsc_col, gsc_mat, basis_col, basis_mat, stage, tau_limit)
     return f_c
 
 
-@njit
+@njit(cache=True)
 def enum_se_jit(block, gs_sq_norms, gsc_coeffs, search_radius):
     """SVP 枚举器（JIT 加速版）— Schnorr-Euchner 策略。"""
     block_size = gs_sq_norms.shape[0]
