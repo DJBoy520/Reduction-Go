@@ -25,16 +25,6 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# FIPS 204 最终版: 所有 ML-DSA 变体 d=13
-D_BY_PARAMS = {
-    "ML-DSA-44": 13,
-    "ML-DSA-65": 13,
-    "ML-DSA-87": 13,
-    # toy 参数用相同 d
-    "toy": 13,
-    "easy": 10,
-}
-
 
 def power2round_encode(r: np.ndarray, d: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Power2Round 编码：将 r 分解为 (r1, r0_raw, r0_centered)。

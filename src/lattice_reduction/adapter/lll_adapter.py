@@ -14,11 +14,18 @@ fpylll 接口:
     - 返回: None (原地修改 B)
 """
 
+import logging
 import numpy as np
 
 from .._native.lll.L3fp import l3fp
 from .._native.lll.L3fp_params import LOVASZ_CONDITION_PARAM
-from .common_adapter import to_column_basis, to_row_basis
+from .common_adapter import (
+    to_column_basis, to_row_basis,
+    validate_basis, validate_delta,
+    ReductionFailedError,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def lll_reduce(B: np.ndarray, delta: float = 0.999,
@@ -34,19 +41,35 @@ def lll_reduce(B: np.ndarray, delta: float = 0.999,
         float_type: 浮点类型（上游仅支持 float64，此参数保留兼容性）
         precision: 浮点精度（上游使用固定 float64，此参数保留兼容性）
         method: 方法（上游不区分，此参数保留兼容性）
+
+    Raises:
+        InvalidBasisError: 格基格式非法
+        ReductionFailedError: 约减过程失败
     """
+    # 参数校验
+    B = validate_basis(B, "B")
+    delta = validate_delta(delta)
+
+    dim = B.shape[0]
+    logger.debug(f"LLL 约减开始: dim={dim}, delta={delta}")
+
     # 行向量 → 列向量
     B_col = to_column_basis(B)
 
-    # 调用上游 LLL
-    reduced_col, gs_coeff, gs_norms = l3fp(
-        B_col,
-        Lovasz_cond_param=delta,
-    )
+    try:
+        # 调用上游 LLL
+        reduced_col, gs_coeff, gs_norms = l3fp(
+            B_col,
+            Lovasz_cond_param=delta,
+        )
+    except Exception as e:
+        raise ReductionFailedError(f"LLL 约减失败: {e}") from e
 
     # 列向量 → 行向量，原地写回
     reduced_row = to_row_basis(reduced_col)
     B[:] = reduced_row
+
+    logger.debug(f"LLL 约减完成: dim={dim}")
 
 
 def lll_reduce_full(B: np.ndarray, delta: float = 0.999) -> tuple:
@@ -61,8 +84,19 @@ def lll_reduce_full(B: np.ndarray, delta: float = 0.999) -> tuple:
             - reduced_basis: numpy array (行向量基)
             - gs_coeff_matrix: numpy array (GSO 系数矩阵)
             - gs_squared_norms: numpy array (GSO 平方范数)
+
+    Raises:
+        InvalidBasisError: 格基格式非法
+        ReductionFailedError: 约减过程失败
     """
+    B = validate_basis(B, "B")
+    delta = validate_delta(delta)
+
     B_col = to_column_basis(B)
-    reduced_col, gs_coeff, gs_norms = l3fp(B_col, Lovasz_cond_param=delta)
+    try:
+        reduced_col, gs_coeff, gs_norms = l3fp(B_col, Lovasz_cond_param=delta)
+    except Exception as e:
+        raise ReductionFailedError(f"LLL 约减失败: {e}") from e
+
     reduced_row = to_row_basis(reduced_col)
     return reduced_row, gs_coeff, gs_norms

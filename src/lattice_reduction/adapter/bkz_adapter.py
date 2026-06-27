@@ -15,11 +15,18 @@ fpylll 接口:
     - 返回: dict (completed_loops, shortest_norms)
 """
 
+import logging
 import numpy as np
 
 from .._native.bkz.bkz_schnorr_euchner_progress_check import bkz_se_pc
 from .._native.bkz.bkz_schnorr_euchner import bkz_se
-from .common_adapter import to_column_basis, to_row_basis
+from .common_adapter import (
+    to_column_basis, to_row_basis,
+    validate_basis, validate_block_size,
+    ReductionFailedError,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def bkz_reduce(B: np.ndarray, block_size: int = 20, max_loops: int = 8,
@@ -44,7 +51,21 @@ def bkz_reduce(B: np.ndarray, block_size: int = 20, max_loops: int = 8,
             "completed_loops": int,
             "shortest_norms": list[float],  # 每轮最短范数
         }
+
+    Raises:
+        InvalidBasisError: 格基格式或参数非法
+        ReductionFailedError: 约减过程失败
     """
+    # 参数校验
+    B = validate_basis(B, "B")
+    dim = B.shape[0]
+    block_size = validate_block_size(block_size, dim)
+
+    if max_loops < 1:
+        raise ReductionFailedError(f"max_loops 必须 >= 1，当前: {max_loops}")
+
+    logger.debug(f"BKZ 约减开始: dim={dim}, block_size={block_size}, max_loops={max_loops}")
+
     # 行向量 → 列向量
     B_col = to_column_basis(B)
 
@@ -53,10 +74,13 @@ def bkz_reduce(B: np.ndarray, block_size: int = 20, max_loops: int = 8,
     no_improve_count = 0
 
     for loop_i in range(1, max_loops + 1):
-        # 调用上游 BKZ（单轮完整 BKZ 约减）
-        reduced_col, gs_coeff, gs_norms = bkz_se_pc(
-            B_col, block_size, enum_algo
-        )
+        try:
+            # 调用上游 BKZ（单轮完整 BKZ 约减）
+            reduced_col, gs_coeff, gs_norms = bkz_se_pc(
+                B_col, block_size, enum_algo
+            )
+        except Exception as e:
+            raise ReductionFailedError(f"BKZ 约减失败 (loop {loop_i}): {e}") from e
 
         # 计算最短范数
         norms = np.linalg.norm(reduced_col, axis=0)
@@ -66,11 +90,14 @@ def bkz_reduce(B: np.ndarray, block_size: int = 20, max_loops: int = 8,
         # 更新基
         B_col = reduced_col
 
+        logger.debug(f"BKZ loop {loop_i}/{max_loops}: shortest_norm={shortest:.2f}")
+
         # auto_abort 检查
         if auto_abort and loop_i > 2:
             if shortest >= prev_norm * 0.999:  # 容差 0.1%
                 no_improve_count += 1
                 if no_improve_count >= 2:
+                    logger.info(f"BKZ auto-abort: 连续无改善，提前终止于 loop {loop_i}")
                     break
             else:
                 no_improve_count = 0
@@ -79,6 +106,8 @@ def bkz_reduce(B: np.ndarray, block_size: int = 20, max_loops: int = 8,
     # 列向量 → 行向量，原地写回
     reduced_row = to_row_basis(B_col)
     B[:] = reduced_row
+
+    logger.debug(f"BKZ 约减完成: {len(shortest_norms)} loops")
 
     return {
         "completed_loops": len(shortest_norms),

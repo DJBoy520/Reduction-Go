@@ -7,12 +7,22 @@ lattice_reduction — 格基约减算法模块。
     lll_reduce(B, delta=0.999)         — LLL 约减（原地修改行向量基 B）
     bkz_reduce(B, block_size=20, ...)  — BKZ 约减（原地修改行向量基 B）
     evaluate_basis_quality(B)          — 格基质量评估
+
+异常类:
+    LatticeReductionError  — 模块统一异常基类
+    InvalidBasisError      — 格基格式或内容非法
+    ReductionFailedError   — 约减过程失败
 """
 
 from .adapter.lll_adapter import lll_reduce, lll_reduce_full
 from .adapter.bkz_adapter import bkz_reduce
 from .adapter.quality_adapter import evaluate_basis_quality
-from .adapter.common_adapter import basis_to_numpy
+from .adapter.common_adapter import (
+    basis_to_numpy,
+    LatticeReductionError,
+    InvalidBasisError,
+    ReductionFailedError,
+)
 
 __all__ = [
     "lll_reduce",
@@ -20,4 +30,7 @@ __all__ = [
     "bkz_reduce",
     "evaluate_basis_quality",
     "basis_to_numpy",
+    "LatticeReductionError",
+    "InvalidBasisError",
+    "ReductionFailedError",
 ]

@@ -26,59 +26,15 @@ import numpy as np
 from asn1crypto import pem as asn1pem
 from asn1crypto.core import Sequence, ObjectIdentifier, Null, BitString
 
-# ── ML-DSA OID 注册表 ───────────────────────────────────────────────────────
-
-MLDSA_OIDS = {
-    "ML-DSA-44": "2.16.840.1.101.3.4.3.17",
-    "ML-DSA-65": "2.16.840.1.101.3.4.3.18",
-    "ML-DSA-87": "2.16.840.1.101.3.4.3.19",
-}
-OID_TO_MLDSA = {v: k for k, v in MLDSA_OIDS.items()}
-
-
-# ── DER 原始构建工具 ─────────────────────────────────────────────────────────
-
-def _encode_der_length(length: int) -> bytes:
-    if length < 0x80:
-        return bytes([length])
-    elif length < 0x100:
-        return bytes([0x81, length])
-    elif length < 0x10000:
-        return bytes([0x82, length >> 8, length & 0xFF])
-    else:
-        raise ValueError(f"DER length {length} too large")
-
-
-def _build_der_sequence(*items: bytes) -> bytes:
-    content = b"".join(items)
-    return b"\x30" + _encode_der_length(len(content)) + content
-
-
-def _build_der_bitstring(data: bytes, unused_bits: int = 0) -> bytes:
-    content = bytes([unused_bits]) + data
-    return b"\x03" + _encode_der_length(len(content)) + content
-
-
-def _build_der_oid(oid_str: str) -> bytes:
-    parts = [int(x) for x in oid_str.split(".")]
-    first_byte = 40 * parts[0] + parts[1]
-    encoded = bytes([first_byte])
-    for part in parts[2:]:
-        if part < 0x80:
-            encoded += bytes([part])
-        else:
-            multi = []
-            multi.append(part & 0x7F)
-            part >>= 7
-            while part > 0:
-                multi.append(0x80 | (part & 0x7F))
-                part >>= 7
-            encoded += bytes(reversed(multi))
-    return b"\x06" + _encode_der_length(len(encoded)) + encoded
-
-
-def _build_der_null() -> bytes:
-    return b"\x05\x00"
+# OID 和 d 值统一从 params.py 引用
+from .params import MLDSA_OIDS, OID_TO_MLDSA, MLDSA_REGISTRY
+# DER 构建工具从 der_utils.py 引用
+from .der_utils import (
+    build_der_sequence as _build_der_sequence,
+    build_der_bitstring as _build_der_bitstring,
+    build_der_oid as _build_der_oid,
+    build_der_null as _build_der_null,
+)
 
 
 # ── t1 打包/解包 ────────────────────────────────────────────────────────────
@@ -125,7 +81,7 @@ def unpack_t1(data: bytes, k: int, n: int, d: int, q: int = 8380417,
     return t1
 
 
-# ── SPKI 解析 (用于读取外部证书) ─────────────────────────────────────────────
+# ── SPKI ASN.1 类定义 ───────────────────────────────────────────────────────
 
 class _AlgorithmIdentifier(Sequence):
     _fields = [
@@ -141,12 +97,14 @@ class _SubjectPublicKeyInfo(Sequence):
     ]
 
 
+# ── d 值从 MLDSA_REGISTRY 获取 ──────────────────────────────────────────────
+
+def _get_d_for(name: str) -> int:
+    """从注册表获取 d 值。"""
+    return MLDSA_REGISTRY.get(name, {}).get("d", 13)
+
+
 # ── 编码/解码 ────────────────────────────────────────────────────────────────
-
-# FIPS 204 最终版: 所有 ML-DSA 变体 d=13, t1 编码 10 bits/系数
-# (旧 Dilithium 草案 ML-DSA-44 用 d=10, 已被 FIPS 204 替代)
-_MLDSA_D = {"ML-DSA-44": 13, "ML-DSA-65": 13, "ML-DSA-87": 13}
-
 
 def encode_spki(rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65", d: int = None) -> bytes:
     """将公钥 (rho, t1) 编码为 X.509 SubjectPublicKeyInfo DER。
@@ -157,7 +115,7 @@ def encode_spki(rho: bytes, t1: np.ndarray, mldsa_name: str = "ML-DSA-65", d: in
         raise ValueError(f"rho 必须 32 字节，实际 {len(rho)} 字节")
     oid = MLDSA_OIDS[mldsa_name]
     if d is None:
-        d = _MLDSA_D.get(mldsa_name, 13)
+        d = _get_d_for(mldsa_name)
     t1_bytes = pack_t1(t1, d=d)
     pk_encoded = rho + t1_bytes
 
@@ -178,7 +136,7 @@ def decode_spki(der_data: bytes, k: int, n: int, d: int = None) -> tuple:
     mldsa_name = OID_TO_MLDSA.get(oid, f"unknown-{oid}")
 
     if d is None:
-        d = _MLDSA_D.get(mldsa_name, 13)
+        d = _get_d_for(mldsa_name)
 
     bs = spki["subjectPublicKey"]
     if bs.unused_bits:

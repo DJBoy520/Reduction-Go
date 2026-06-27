@@ -22,42 +22,25 @@ from asn1crypto import pem as asn1pem
 from asn1crypto.core import Sequence, ObjectIdentifier, Null, BitString
 
 from .spki import (
-    MLDSA_OIDS, OID_TO_MLDSA,
+    OID_TO_MLDSA,
     unpack_t1, t1_coeff_bits,
+    _SubjectPublicKeyInfo,
 )
+from .params import MLDSA_REGISTRY
 
 logger = logging.getLogger(__name__)
 
 # ── OID → 参数集映射 ────────────────────────────────────────────────────────
+# 标准参数集直接从 MLDSA_REGISTRY 构建
+OID_PARAMS = {}
+for _name, _p in MLDSA_REGISTRY.items():
+    OID_PARAMS[_p["oid"]] = {"name": _name, "k": _p["k"], "l": _p["l"], "n": _p["n"], "d": _p["d"]}
 
-OID_PARAMS = {
-    "2.16.840.1.101.3.4.3.17": {"name": "ML-DSA-44", "k": 4, "l": 4, "n": 256, "d": 13},
-    "2.16.840.1.101.3.4.3.18": {"name": "ML-DSA-65", "k": 6, "l": 6, "n": 256, "d": 13},
-    "2.16.840.1.101.3.4.3.19": {"name": "ML-DSA-87", "k": 8, "l": 8, "n": 256, "d": 13},
-}
-
-# toy 参数集的 OID 映射 (用于测试)
+# toy 参数集的 OID 映射 (用于测试，覆盖维度)
 TOY_OID_PARAMS = {
-    "2.16.840.1.101.3.4.3.17": {"name": "ML-DSA-44", "k": 2, "l": 2, "n": 30, "d": 13},
-    "2.16.840.1.101.3.4.3.18": {"name": "ML-DSA-65", "k": 2, "l": 2, "n": 30, "d": 13},
-    "2.16.840.1.101.3.4.3.19": {"name": "ML-DSA-87", "k": 2, "l": 2, "n": 30, "d": 13},
+    oid: {**params, "k": 2, "l": 2, "n": 30}
+    for oid, params in OID_PARAMS.items()
 }
-
-
-# ── X.509 ASN.1 类定义 ──────────────────────────────────────────────────────
-
-class _AlgorithmIdentifier(Sequence):
-    _fields = [
-        ("algorithm", ObjectIdentifier),
-        ("parameters", Null),
-    ]
-
-
-class _SubjectPublicKeyInfo(Sequence):
-    _fields = [
-        ("algorithm", _AlgorithmIdentifier),
-        ("subjectPublicKey", BitString),
-    ]
 
 
 # ── 核心解析函数 ────────────────────────────────────────────────────────────

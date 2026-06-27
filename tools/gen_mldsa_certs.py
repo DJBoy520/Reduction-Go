@@ -7,7 +7,6 @@
 
 import os
 import sys
-import hashlib
 import secrets
 import datetime
 
@@ -18,121 +17,16 @@ from asn1crypto.core import (
     Integer, UTCTime, SequenceOf,
 )
 
-# ── ML-DSA OID 映射 ──────────────────────────────────────────────────────────
-
-MLDSA_PARAMS = {
-    "ML-DSA-44": {
-        "oid": "2.16.840.1.101.3.4.3.17",
-        "sig_oid": "2.16.840.1.101.3.4.3.17",  # 签名算法 OID 与密钥 OID 相同
-    },
-    "ML-DSA-65": {
-        "oid": "2.16.840.1.101.3.4.3.18",
-        "sig_oid": "2.16.840.1.101.3.4.3.18",
-    },
-    "ML-DSA-87": {
-        "oid": "2.16.840.1.101.3.4.3.19",
-        "sig_oid": "2.16.840.1.101.3.4.3.19",
-    },
-}
-
-
-# ── DER 构建工具 ─────────────────────────────────────────────────────────────
-
-def _encode_der_length(length: int) -> bytes:
-    if length < 0x80:
-        return bytes([length])
-    elif length < 0x100:
-        return bytes([0x81, length])
-    elif length < 0x10000:
-        return bytes([0x82, length >> 8, length & 0xFF])
-    else:
-        raise ValueError(f"DER length {length} too large")
-
-
-def _build_der_sequence(*items: bytes) -> bytes:
-    content = b"".join(items)
-    return b"\x30" + _encode_der_length(len(content)) + content
-
-
-def _build_der_set(*items: bytes) -> bytes:
-    content = b"".join(items)
-    return b"\x31" + _encode_der_length(len(content)) + content
-
-
-def _build_der_bitstring(data: bytes, unused_bits: int = 0) -> bytes:
-    content = bytes([unused_bits]) + data
-    return b"\x03" + _encode_der_length(len(content)) + content
-
-
-def _build_der_octet_string(data: bytes) -> bytes:
-    return b"\x04" + _encode_der_length(len(data)) + data
-
-
-def _build_der_oid(oid_str: str) -> bytes:
-    parts = [int(x) for x in oid_str.split(".")]
-    first_byte = 40 * parts[0] + parts[1]
-    encoded = bytes([first_byte])
-    for part in parts[2:]:
-        if part < 0x80:
-            encoded += bytes([part])
-        else:
-            multi = []
-            multi.append(part & 0x7F)
-            part >>= 7
-            while part > 0:
-                multi.append(0x80 | (part & 0x7F))
-                part >>= 7
-            encoded += bytes(reversed(multi))
-    return b"\x06" + _encode_der_length(len(encoded)) + encoded
-
-
-def _build_der_null() -> bytes:
-    return b"\x05\x00"
-
-
-def _build_der_integer(value: int) -> bytes:
-    if value == 0:
-        return b"\x02\x01\x00"
-    neg = value < 0
-    if neg:
-        value = -value
-    byte_len = (value.bit_length() + 8) // 8
-    raw = value.to_bytes(byte_len, "big")
-    # 补零防止最高位为 1 被误解为负数
-    if raw[0] & 0x80 and not neg:
-        raw = b"\x00" + raw
-    if neg:
-        # 二补码
-        int_val = int.from_bytes(raw, "big")
-        int_val = (1 << (len(raw) * 8)) - int_val
-        raw = int_val.to_bytes(len(raw), "big")
-    return b"\x02" + _encode_der_length(len(raw)) + raw
-
-
-def _build_der_utc_time(dt: datetime.datetime) -> bytes:
-    # YYMMDDHHMMSSZ
-    s = dt.strftime("%y%m%d%H%M%SZ")
-    return b"\x17" + bytes([len(s)]) + s.encode("ascii")
-
-
-def _build_der_context_specific(tag: int, content: bytes) -> bytes:
-    return bytes([0xA0 | tag]) + _encode_der_length(len(content)) + content
-
-
-def _build_name(common_name: str) -> bytes:
-    """构建 X.509 Name (SEQUENCE OF SET OF AttributeTypeAndValue)。
-
-    只设置 CN (commonName)。
-    """
-    # OID 2.5.4.3 = commonName
-    cn_attr = _build_der_sequence(
-        _build_der_oid("2.5.4.3"),
-        _build_der_octet_string(common_name.encode("utf-8")),
-    )
-    # SET 包含一个 AttributeTypeAndValue
-    attr_set = _build_der_set(cn_attr)
-    # SEQUENCE 包含一个 SET
-    return _build_der_sequence(attr_set)
+# DER 构建工具和 OID 从公共模块引用
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.der_utils import (
+    build_der_sequence, build_der_set,
+    build_der_bitstring, build_der_octet_string,
+    build_der_oid, build_der_null, build_der_integer,
+    build_der_utc_time, build_der_context_specific,
+    build_name,
+)
+from src.params import MLDSA_OIDS
 
 
 # ── 证书生成 ──────────────────────────────────────────────────────────────────
@@ -146,8 +40,7 @@ def generate_self_signed_cert(
 
     Returns: (cert_der, public_key_bytes, secret_key_bytes)
     """
-    params = MLDSA_PARAMS[variant]
-    oid = params["oid"]
+    oid = MLDSA_OIDS[variant]
 
     # 1. 生成密钥对
     sig = oqs.Signature(variant)
@@ -155,33 +48,33 @@ def generate_self_signed_cert(
     sk_bytes = sig.export_secret_key()
 
     # 2. 构建 SubjectPublicKeyInfo
-    spki = _build_der_sequence(
-        _build_der_sequence(_build_der_oid(oid), _build_der_null()),
-        _build_der_bitstring(pk_bytes),
+    spki = build_der_sequence(
+        build_der_sequence(build_der_oid(oid), build_der_null()),
+        build_der_bitstring(pk_bytes),
     )
 
     # 3. 构建时间
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.UTC)
     not_before = now - datetime.timedelta(days=1)
     not_after = now + datetime.timedelta(days=validity_days)
 
     # 4. 构建 TBSCertificate
     cn = f"{variant}-test-{serial:04d}"
-    issuer_name = _build_name(cn)
-    subject_name = _build_name(cn)  # 自签名: issuer == subject
+    issuer_name = build_name(cn)
+    subject_name = build_name(cn)  # 自签名: issuer == subject
 
-    validity = _build_der_sequence(
-        _build_der_utc_time(not_before),
-        _build_der_utc_time(not_after),
+    validity = build_der_sequence(
+        build_der_utc_time(not_before),
+        build_der_utc_time(not_after),
     )
 
-    tbs = _build_der_sequence(
+    tbs = build_der_sequence(
         # version [0] EXPLICIT INTEGER v3 (2)
-        _build_der_context_specific(0, _build_der_integer(2)),
+        build_der_context_specific(0, build_der_integer(2)),
         # serialNumber
-        _build_der_integer(serial),
+        build_der_integer(serial),
         # signature (AlgorithmIdentifier)
-        _build_der_sequence(_build_der_oid(oid), _build_der_null()),
+        build_der_sequence(build_der_oid(oid), build_der_null()),
         # issuer
         issuer_name,
         # validity
@@ -196,12 +89,12 @@ def generate_self_signed_cert(
     sig_bytes = sig.sign(tbs)
 
     # 6. 组装完整证书
-    cert = _build_der_sequence(
+    cert = build_der_sequence(
         tbs,
         # signatureAlgorithm
-        _build_der_sequence(_build_der_oid(oid), _build_der_null()),
+        build_der_sequence(build_der_oid(oid), build_der_null()),
         # signatureValue
-        _build_der_bitstring(sig_bytes),
+        build_der_bitstring(sig_bytes),
     )
 
     return cert, pk_bytes, sk_bytes

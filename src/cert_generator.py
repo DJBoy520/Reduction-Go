@@ -19,7 +19,7 @@ import numpy as np
 # 确保可以导入 src
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.params import get_params
+from src.params import get_params, mldsa_from_k
 from src.keygen import keygen, expand_a
 from src.protocol_adapter import ProtocolAdapter
 from src.spki import encode_spki, save_spki_pem, save_spki_der, MLDSA_OIDS
@@ -54,9 +54,10 @@ def generate_self_signed_cert(
 
     # 确定 ML-DSA 名称与 OID 的映射
     if mldsa_name not in MLDSA_OIDS:
-        # 自动映射: k=4→44, k=5→65, k=7→87
-        k_to_mldsa = {4: "ML-DSA-44", 5: "ML-DSA-65", 7: "ML-DSA-87"}
-        mldsa_name = k_to_mldsa.get(k, "ML-DSA-65")
+        try:
+            mldsa_name = mldsa_from_k(k)
+        except ValueError:
+            mldsa_name = "ML-DSA-65"
 
     print(f"═══ ML-DSA 证书生成器 ═══")
     print(f"  参数集: {params_name} (k={k}, l={l}, n={n})")
@@ -135,8 +136,10 @@ def main():
     mldsa = args.mldsa
     if mldsa is None:
         p = get_params(args.params)
-        k_to_mldsa = {4: "ML-DSA-44", 5: "ML-DSA-65", 7: "ML-DSA-87"}
-        mldsa = k_to_mldsa.get(p["k"], "ML-DSA-65")
+        try:
+            mldsa = mldsa_from_k(p["k"])
+        except ValueError:
+            mldsa = "ML-DSA-65"
 
     generate_self_signed_cert(
         args.output, mldsa, args.params, args.d, args.seed, args.format

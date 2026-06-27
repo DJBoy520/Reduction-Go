@@ -8,10 +8,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import numpy as np
 from src.protocol_adapter import (
     ProtocolAdapter, power2round_encode, power2round_decode,
-    get_error_bound, D_BY_PARAMS
+    get_error_bound
 )
 from src.keygen import keygen
-from src.params import get_params
+from src.params import get_params, get_d
 
 
 def test_roundtrip():
@@ -102,7 +102,7 @@ def test_with_keygen():
     seed = (12345).to_bytes(8, "big")
     rho, s1, s2, t, A = keygen("easy", seed=seed, params=p)
 
-    d = 10
+    d = p["d"]
     adapter = ProtocolAdapter(d=d, q=p["q"])
 
     print(f"\n  t shape: {t.shape}, t 范围: [{t.min()}, {t.max()}]")
@@ -141,7 +141,7 @@ def test_slack_lattice_preview():
     for name in ["easy", "medium", "hard", "extreme"]:
         p = get_params(name)
         k, l, n = p["k"], p["l"], p["n"]
-        d = D_BY_PARAMS.get(name, 10)
+        d = get_d(name)
 
         ln = l * n
         kn = k * n
