@@ -53,7 +53,7 @@ class AttackConfig:
     bkz_max_loops: Optional[int] = None
     bkz_threads: Optional[int] = None  # 预留：纯 Python BKZ 暂不支持多线程
     bkz_auto_abort: bool = False
-    lll_delta: float = 0.999
+    lll_delta: float = 0.99
 
     # 随机种子
     seed: Optional[int] = None

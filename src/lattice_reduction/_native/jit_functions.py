@@ -13,6 +13,7 @@ from .jit_compat import njit
 def gso_step_jit(basis_slice, gsc, gs, stage):
     """GSO 单步计算（JIT 加速版）。
 
+    全部手动循环，不调用 np.dot（避免非连续数组开销）。
     CGS: μ_{j,k} = (⟨b_k, b_j⟩ - Σ_{i<j} μ_{i,j}·μ_{i,k}·||b*_i||²) / ||b*_j||²
     """
     n = basis_slice.shape[0]
@@ -23,23 +24,15 @@ def gso_step_jit(basis_slice, gsc, gs, stage):
             s += basis_slice[r, 0] * basis_slice[r, 0]
         gs[0] = s
 
-    # Compute dot products ⟨b_k, b_j⟩ for j < stage
+    # Compute ⟨b_k, b_j⟩ for all j < stage, and ||b_k||²
     dots = np.zeros(stage)
-    for j in range(stage):
-        s = 0.0
-        for r in range(n):
-            s += basis_slice[r, stage] * basis_slice[r, j]
-        dots[j] = s
-
-    # Initial squared norm
-    gs[stage] = dots[0] if stage == 0 else np.dot(
-        basis_slice[:, stage], basis_slice[:, stage]
-    )
-    # Recompute from dots for consistency
-    s = 0.0
+    norm_sq = 0.0
     for r in range(n):
-        s += basis_slice[r, stage] * basis_slice[r, stage]
-    gs[stage] = s
+        bk_r = basis_slice[r, stage]
+        norm_sq += bk_r * bk_r
+        for j in range(stage):
+            dots[j] += bk_r * basis_slice[r, j]
+    gs[stage] = norm_sq
 
     for j in range(stage):
         # correction_term = Σ_{i<j} μ_{i,j} · μ_{i,stage} · ||b*_i||²
@@ -55,10 +48,7 @@ def gso_step_jit(basis_slice, gsc, gs, stage):
 
 @njit
 def size_reduction_jit(gsc_col, gsc_mat, basis_col, basis_mat, stage, tau_limit):
-    """尺寸缩减核心（JIT 加速版）。
-
-    对 column `stage` 的所有前驱执行尺寸缩减。
-    """
+    """尺寸缩减核心（JIT 加速版）。"""
     threshold = 0.5
     f_c = False
 
@@ -68,12 +58,10 @@ def size_reduction_jit(gsc_col, gsc_mat, basis_col, basis_mat, stage, tau_limit)
             if abs(mu) > tau_limit:
                 f_c = True
 
-            # Update GSO coefficients
             for k in range(i):
                 gsc_col[k] -= mu * gsc_mat[k, i]
             gsc_col[i] -= mu
 
-            # Update basis vector
             n = basis_col.shape[0]
             for r in range(n):
                 basis_col[r] -= mu * basis_mat[r, i]
@@ -83,17 +71,7 @@ def size_reduction_jit(gsc_col, gsc_mat, basis_col, basis_mat, stage, tau_limit)
 
 @njit
 def enum_se_jit(block, gs_sq_norms, gsc_coeffs, search_radius):
-    """SVP 枚举器（JIT 加速版）— Schnorr-Euchner 策略。
-
-    Args:
-        block: (dim, block_size) 块基向量
-        gs_sq_norms: (block_size,) GSO 平方范数
-        gsc_coeffs: (block_size, block_size) GSO 系数
-        search_radius: 初始搜索半径
-
-    Returns:
-        (found, radius, coeff) — found=True 表示找到短向量
-    """
+    """SVP 枚举器（JIT 加速版）— Schnorr-Euchner 策略。"""
     block_size = gs_sq_norms.shape[0]
     dim = block.shape[0]
 
@@ -108,15 +86,11 @@ def enum_se_jit(block, gs_sq_norms, gsc_coeffs, search_radius):
     partial[0] = 0.0
 
     while k >= 0:
-        # Compute target coefficient using Schnorr-Euchner stepping
-        if k == 0:
-            target = 0.0
-        else:
-            target = 0.0
+        target = 0.0
+        if k > 0:
             for i in range(k):
                 target -= coeff[i] * gsc_coeffs[i, k]
 
-        # Enumerate around target
         step = 1
         upward = True
 
@@ -128,18 +102,15 @@ def enum_se_jit(block, gs_sq_norms, gsc_coeffs, search_radius):
             upward = not upward
             step += 1
 
-            # Partial norm
             diff = coeff[k] - target
             new_partial = partial[k - 1] if k > 0 else 0.0
             new_partial += diff * diff * gs_sq_norms[k]
 
             if new_partial >= best_radius:
-                # Prune: try next coefficient or backtrack
                 if step > 2 * int(np.sqrt(best_radius / gs_sq_norms[k])) + 10:
                     break
                 continue
 
-            # Found shorter vector
             if k == block_size - 1:
                 best_radius = new_partial
                 found = True
@@ -147,7 +118,6 @@ def enum_se_jit(block, gs_sq_norms, gsc_coeffs, search_radius):
                     best_coeff[i] = coeff[i]
                 break
 
-            # Go deeper
             partial[k] = new_partial
             k += 1
             coeff[k] = 0
