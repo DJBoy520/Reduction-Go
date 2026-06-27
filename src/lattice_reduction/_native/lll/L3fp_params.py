@@ -1,6 +1,6 @@
 import numpy as np
 
-LOVASZ_CONDITION_PARAM = 3 / 4  # Determined range ]1/4, 1[
+LOVASZ_CONDITION_PARAM = 0.79  # Determined range ]1/4, 1[
 
 SIZE_REDUCTION_CONDITION_PARAM = 1 / 2
 

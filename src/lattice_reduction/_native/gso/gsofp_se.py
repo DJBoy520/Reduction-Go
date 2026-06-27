@@ -10,7 +10,7 @@ def gso_step(basis_slice, gs_coeff_matrix, gs_squared_norms, stage):
     Falls back to pure Python if Numba is not available.
 
     Args:
-        basis_slice: (n, stage+1) — columns 0..stage of basis
+        basis_slice: (n, stage+1) — columns 0..stage of basis (float64)
         gs_coeff_matrix: (stage+1, stage+1) — GSO coefficients
         gs_squared_norms: (stage+1,) — GSO squared norms
         stage: current stage index
@@ -19,8 +19,10 @@ def gso_step(basis_slice, gs_coeff_matrix, gs_squared_norms, stage):
         (gs_squared_norms[:stage+1], gs_coeff_matrix[:, :stage+1])
     """
     if jit_available:
+        # basis_slice is already float64 (from initialize()), no copy needed.
+        # Numba handles non-contiguous slices via stride info.
         gso_step_jit(
-            basis_slice.astype(np.float64),
+            basis_slice,
             gs_coeff_matrix,
             gs_squared_norms,
             stage,

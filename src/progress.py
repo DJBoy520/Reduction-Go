@@ -53,18 +53,33 @@ def _fmt_norm(norm: float) -> str:
 # ── 经验耗时估算 ────────────────────────────────────────────────────────────
 
 def estimate_lll_time(dim: int) -> tuple[float, float]:
-    """估算 LLL 耗时范围（秒），基于经验公式。"""
+    """估算 LLL 耗时范围（秒），基于实际性能数据。
+
+    fpylll wrapper: ~dim^2.5 * 0.001s
+    native JIT: ~dim^2.5 * 0.01s (小维度)
+    """
     base = (dim / 200) ** 2.5
-    lo = max(1, base * 10)
-    hi = lo * 3
+    # fpylll 可用时更快，native 在大维度时显著变慢
+    try:
+        import fpylll  # noqa
+        lo = max(1, base * 5)
+        hi = lo * 5
+    except ImportError:
+        lo = max(1, base * 10)
+        hi = lo * 10
     return lo, hi
 
 
 def estimate_bkz_time(dim: int, block_size: int, max_loops: int) -> tuple[float, float]:
     """估算 BKZ 耗时范围（秒）。"""
     base = (dim / 200) ** 2.5 * (block_size / 10) ** 1.5
-    lo = max(1, base * 5 * max_loops)
-    hi = lo * 4
+    try:
+        import fpylll  # noqa
+        lo = max(1, base * 3 * max_loops)
+        hi = lo * 3
+    except ImportError:
+        lo = max(1, base * 5 * max_loops)
+        hi = lo * 4
     return lo, hi
 
 

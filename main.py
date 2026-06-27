@@ -73,7 +73,7 @@ def parse_args():
     )
     parser.add_argument(
         "--lll-delta", dest="lll_delta", type=float, default=0.79,
-        help="LLL 约减质量参数 delta (默认: 0.999)"
+        help="LLL 约减质量参数 delta (默认: 0.79)"
     )
     parser.add_argument(
         "--seed", type=int, default=None,

@@ -82,11 +82,17 @@ def enum_sh_solver(basis_block, gs_squared_norms, gs_coeffs):
             if t == t_max:
                 tilde_u[t] += 1
             else:
-                tilde_u[t] = next(tilde_u[t], -y[t])
+                tilde_u[t] = _zigzag_next(tilde_u[t], -y[t])
     
     return search_radius, u[:k]
 
-def next(a, r):
+def _zigzag_next(a, r):
+    """TODO: Schnorr-Hörner zigzag 步进实现不完整。
+
+    正确的 zigzag 应围绕 round(-y[t]) 依次尝试 +1, -1, +2, -2, ...
+    当前实现只返回 a+1 或 a-1，无法探索完整枚举树。
+    建议使用 enum_se_solver (algo="2") 或 enum_se_og_solver (algo="1") 替代。
+    """
     if r > a:
         return a - 1
     else:

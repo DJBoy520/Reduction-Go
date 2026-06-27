@@ -1,5 +1,4 @@
 import numpy as np
-from tqdm import tqdm
 
 from .bkz_params import DELTA
 from ..lll.L3fp import l3fp
@@ -71,14 +70,6 @@ def bkz_se_pc(basis_matrix, block_size, enum_algo):
     basis_matrix, gs_coeff_matrix, gs_squared_norms = l3fp(basis_matrix)
     z = 0
     j = -1
-    pbar = tqdm(
-        total=m,
-        desc="BKZ (Schnorr-Eucher with tracking) reduction loop",
-        leave=False,
-        ascii="-##",
-        colour="yellow",
-        position=1,
-    )
     while z < m:
         j += 1
         k = min(j + block_size - 1, m)
@@ -98,7 +89,7 @@ def bkz_se_pc(basis_matrix, block_size, enum_algo):
                 basis_matrix[:, : block_end + 1], j, np.transpose(b_new), axis=1
             )
             (
-                basis_matrix[:, : block_end + 1],
+                di_basis,
                 gs_coeff_matrix[: block_end + 1, : block_end + 1],
                 gs_squared_norms[: block_end + 1],
             ) = l3fp_deep_insert(
@@ -109,12 +100,15 @@ def bkz_se_pc(basis_matrix, block_size, enum_algo):
                 Lovasz_cond_param=DELTA,
                 f_c=True,
             )
+            # Round float64 basis back to int64 (LLL guarantees integer basis)
+            basis_matrix[:, : block_end + 1] = np.round(di_basis).astype(np.int64)
 
             # Evaluate improvement
-            # Save updated block_gs_norms for progress tracking
             block_gs_norms_after = gs_squared_norms[j : k + 1].copy()
             z = 0
-            if structural_changes(block_gs_norms_before, block_gs_norms_after, block_size):
+            # structural_changes returns True = no change, False = changed.
+            # Only skip z increment when a real change occurred (genuine progress).
+            if not structural_changes(block_gs_norms_before, block_gs_norms_after, block_size):
                 continue
 
         z += 1
@@ -129,8 +123,5 @@ def bkz_se_pc(basis_matrix, block_size, enum_algo):
             start_stage=block_end - 1,
             Lovasz_cond_param=0.99,
         )
-        pbar.update(1)
-
-    pbar.close()
 
     return basis_matrix, gs_coeff_matrix, gs_squared_norms

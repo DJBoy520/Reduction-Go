@@ -36,21 +36,37 @@ logger = logging.getLogger(__name__)
 # ── JIT 预热（仅首次导入时编译一次） ──
 def _warmup_jit():
     """预编译 Numba JIT 函数，避免首次调用时拖慢主流程。
-    
+
     使用模拟的 GSO 数据逐步调用，确保所有 stage 的 gs 正确初始化。
     """
     try:
         from .lattice_reduction._native.jit_compat import jit_available
         if jit_available:
             import numpy as np
-            from .lattice_reduction._native.jit_functions import gso_step_jit
-            # 模拟小矩阵完整 GSO 流程，避免除零
+            from .lattice_reduction._native.jit_functions import (
+                gso_step_jit, l3fp_jit, l3fp_jit_int, gso_full_refresh_int,
+            )
+            # GSO 预热
             n = 20
             basis = np.random.rand(n, n)
             gs = np.zeros(n)
             gsc = np.zeros((n, n))
             for stage in range(1, n):
                 gso_step_jit(basis[:, :stage+1], gsc, gs, stage)
+            # L3fp float64 预热
+            basis2 = np.random.rand(6, 6)
+            gsc2 = np.zeros((6, 6))
+            gsc2[0, 0] = 1.0
+            gs2 = np.zeros(6)
+            l3fp_jit(basis2, gsc2, gs2, 1, 0.75, 2.0**20)
+            # L3fp int64 预热
+            basis3 = np.random.randint(-100, 100, size=(6, 6)).astype(np.int64)
+            gsc3 = np.zeros((6, 6))
+            gsc3[0, 0] = 1.0
+            gs3 = np.zeros(6)
+            l3fp_jit_int(basis3, gsc3, gs3, 1, 0.75, 2.0**20)
+            # gso_full_refresh 预热
+            gso_full_refresh_int(basis3, gsc3, gs3, 6)
     except Exception as e:
         # 预热失败不影响正常功能
         pass

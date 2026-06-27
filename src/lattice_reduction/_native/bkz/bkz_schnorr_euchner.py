@@ -1,5 +1,4 @@
 import numpy as np
-from tqdm import tqdm
 
 from .bkz_params import DELTA
 from ..lll.L3fp import l3fp
@@ -41,14 +40,6 @@ def bkz_se(basis_matrix, block_size, enum_algo):
     basis_matrix, gs_coeff_matrix, gs_squared_norms = l3fp(basis_matrix)
     z = 0
     j = -1  # Ensure that we start the first loop from j=0
-    pbar = tqdm(
-        total=m,
-        desc="BKZ (Schnorr-Euchner) reduction loop",
-        leave=False,
-        ascii="-##",
-        colour="yellow",
-        position=1,
-    )
     while z < m:
         j += 1
         k = min(j + block_size - 1, m)
@@ -64,7 +55,7 @@ def bkz_se(basis_matrix, block_size, enum_algo):
             injected_basis = np.insert(basis_matrix[:, :block_end + 1], j, np.transpose(b_new), axis=1)
 
             (
-                basis_matrix[:, :block_end + 1],
+                di_basis,
                 gs_coeff_matrix[:block_end + 1, :block_end + 1],
                 gs_squared_norms[:block_end + 1],
             ) = l3fp_deep_insert(
@@ -75,6 +66,7 @@ def bkz_se(basis_matrix, block_size, enum_algo):
                 Lovasz_cond_param=DELTA,
                 f_c=True,
             )
+            basis_matrix[:, :block_end + 1] = np.round(di_basis).astype(np.int64)
             z = 0
 
         else:
@@ -90,7 +82,5 @@ def bkz_se(basis_matrix, block_size, enum_algo):
                 start_stage=block_end - 1,
                 Lovasz_cond_param=0.99,
             )
-            pbar.update(1)
 
-    pbar.close()
     return basis_matrix, gs_coeff_matrix, gs_squared_norms
