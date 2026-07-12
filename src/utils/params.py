@@ -12,6 +12,8 @@ ML-DSA parameter configuration module.
 
 # ── 公共常量 ─────────────────────────────────────────────────────────────────
 
+from src.lattice_reduction._native.bkz.bkz_params import MP_DPS_LOW, MP_DPS_HIGH
+
 MLDSA_Q = 8380417  # 2^23 - 2^13 + 1
 
 
@@ -33,6 +35,8 @@ MLDSA_REGISTRY = {
         "bkz_threads": 6, "use_bkz": True, "auto_abort": False,
         # 浮点精度
         "float_type": "mpfr", "precision": 200,
+        "use_auto_precision": True,
+        "mp_dps_default": MP_DPS_HIGH,
     },
     "ML-DSA-65": {
         "k": 6, "l": 6, "n": 256,
@@ -43,6 +47,8 @@ MLDSA_REGISTRY = {
         "bkz_block_size": 30, "bkz_max_loops": 8,
         "bkz_threads": 6, "use_bkz": True, "auto_abort": False,
         "float_type": "mpfr", "precision": 200,
+        "use_auto_precision": True,
+        "mp_dps_default": MP_DPS_HIGH,
     },
     "ML-DSA-87": {
         "k": 8, "l": 8, "n": 256,
@@ -53,6 +59,8 @@ MLDSA_REGISTRY = {
         "bkz_block_size": 35, "bkz_max_loops": 8,
         "bkz_threads": 6, "use_bkz": True, "auto_abort": False,
         "float_type": "mpfr", "precision": 200,
+        "use_auto_precision": True,
+        "mp_dps_default": MP_DPS_HIGH,
     },
 }
 
@@ -76,6 +84,8 @@ PARAMS = {
         "bkz_block_size": 8, "bkz_max_loops": 8,
         "bkz_threads": 6, "use_bkz": True, "auto_abort": False,
         "float_type": "double", "precision": 53,
+        "use_auto_precision": True,
+        "mp_dps_default": MP_DPS_LOW,
     },
     "medium": {
         "k": 3, "l": 3, "n": 80,
@@ -84,6 +94,8 @@ PARAMS = {
         "bkz_block_size": 15, "bkz_max_loops": 8,
         "bkz_threads": 6, "use_bkz": True, "auto_abort": False,
         "float_type": "mpfr", "precision": 200,
+        "use_auto_precision": True,
+        "mp_dps_default": MP_DPS_LOW,
     },
     "hard": {
         "k": 4, "l": 4, "n": 120,
@@ -92,6 +104,8 @@ PARAMS = {
         "bkz_block_size": 20, "bkz_max_loops": 8,
         "bkz_threads": 6, "use_bkz": True, "auto_abort": False,
         "float_type": "mpfr", "precision": 200,
+        "use_auto_precision": True,
+        "mp_dps_default": MP_DPS_LOW,
     },
     "extreme": {
         "k": 5, "l": 5, "n": 200,
@@ -100,6 +114,8 @@ PARAMS = {
         "bkz_block_size": 25, "bkz_max_loops": 8,
         "bkz_threads": 6, "use_bkz": True, "auto_abort": False,
         "float_type": "mpfr", "precision": 200,
+        "use_auto_precision": True,
+        "mp_dps_default": MP_DPS_HIGH,
     },
     # Aliases
     "toy": None,  # maps to 'easy'

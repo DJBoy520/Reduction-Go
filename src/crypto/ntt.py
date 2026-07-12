@@ -222,28 +222,3 @@ def verify_negacyclic(n: int = 32) -> bool:
     return bool(np.array_equal(c_ntt, c_ref))
 
 
-if __name__ == "__main__":
-    zeta = _ROOT_OF_UNITY
-    print(f"q = {Q}")
-    print(f"ζ = {zeta}")
-    print(f"ζ^256 = {pow(zeta, 256, Q)} (should be {Q-1})")
-    print(f"ζ^512 = {pow(zeta, 512, Q)} (should be 1)")
-    print(f"n_inv = {_N_INV}")
-    print()
-
-    # 验证标准维度 n=256
-    print("=== n=256 (标准 ML-DSA) ===")
-    rt = verify_ntt_roundtrip(256)
-    vd = verify_vs_direct(256)
-    print(f"  roundtrip={rt}, vs_direct={vd}  {'✓' if (rt and vd) else '✗'}")
-
-    # 验证非标准维度（使用直接 NTT）
-    print("\n=== 非标准维度 (直接 NTT) ===")
-    for test_n in [4, 8, 16, 32, 64, 128]:
-        rt = verify_ntt_roundtrip(test_n)
-        vd = verify_vs_direct(test_n)
-        status = "✓" if (rt and vd) else "✗"
-        print(f"  n={test_n:>3}: roundtrip={rt}, vs_direct={vd}  {status}")
-
-    print()
-    print(f"  Negacyclic (n=32): {verify_negacyclic(32)}")

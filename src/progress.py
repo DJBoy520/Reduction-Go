@@ -1,251 +1,222 @@
-"""
-进度显示模块 — LLL/BKZ 实时状态反馈。
+"""进度显示 — LLL/BKZ 实时状态 + 动态 ETA。
 
-LLL: l3fp() 是阻塞 Python 调用，无迭代回调，
-     用后台线程每秒刷新 elapsed time。
-BKZ: 拆成 max_loops 次 bkz_se_pc() 调用，
-     每轮结束 Python 拿回控制权，更新进度条+最短范数。
-
-输出策略:
-  - TTY 环境 (终端直接跑): 用 tqdm 动态进度条
-  - 非 TTY (重定向/管道): 用 print + \r 手动刷新，兼容日志文件
+无外部依赖：通过 stderr 单行刷新（\\r）显示进度，
+后台守护线程以固定间隔刷新显示，避免阻塞主计算线程。
 """
 
+import logging
 import sys
 import threading
 import time
 
-try:
-    from tqdm import tqdm
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
+logger = logging.getLogger(__name__)
 
 
-def _is_tty() -> bool:
-    """检测输出是否为真实终端。"""
-    return sys.stderr.isatty() if hasattr(sys.stderr, 'isatty') else False
+def _is_tty():
+    return sys.stderr.isatty() if hasattr(sys.stderr, "isatty") else False
 
 
-def _fmt_time(seconds: float) -> str:
-    """格式化秒数。"""
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    m, s = divmod(int(seconds), 60)
-    if m < 60:
-        return f"{m}m{s:02d}s"
-    h, m = divmod(m, 60)
-    return f"{h}h{m:02d}m{s:02d}s"
+def _fmt_time(seconds):
+    """将秒数格式化为 HH:MM:SS 或 MM:SS。"""
+    if seconds is None or seconds < 0:
+        return "??:??"
+    seconds = int(seconds)
+    if seconds < 0:
+        return "??:??"
+    h, remainder = divmod(seconds, 3600)
+    m, s = divmod(remainder, 60)
+    if h > 0:
+        return f"{h:d}:{m:02d}:{s:02d}"
+    return f"{m:d}:{s:02d}"
 
 
-def _fmt_norm(norm: float) -> str:
-    """格式化范数。"""
-    if norm < 1000:
-        return f"{norm:.1f}"
-    elif norm < 1e6:
-        return f"{norm/1000:.1f}k"
-    elif norm < 1e9:
-        return f"{norm/1e6:.1f}M"
+def print_estimate(dim, block_size, beta):
+    """打印预估时间（不使用 tqdm），一次性输出。"""
+    if dim <= 0 or block_size <= 0:
+        print(f"[预估] dim={dim}, block_size={block_size}, β={beta}")
+        return
+    # 简单经验公式
+    est = 0.1 * dim ** 2 * (block_size / dim) ** 4
+    if est < 1:
+        print(f"[预估] dim={dim}, block_size={block_size}, β={beta} → < 1s")
+    elif est < 60:
+        print(f"[预估] dim={dim}, block_size={block_size}, β={beta} → ~{est:.0f}s")
+    elif est < 3600:
+        print(f"[预估] dim={dim}, block_size={block_size}, β={beta} → ~{est / 60:.1f}min")
     else:
-        return f"{norm/1e6:.0f}M"
+        print(f"[预估] dim={dim}, block_size={block_size}, β={beta} → ~{est / 3600:.1f}h")
 
 
-# ── 经验耗时估算 ────────────────────────────────────────────────────────────
+class _ProgressBase:
+    """进度追踪器基类：后台线程 + 单行刷新。"""
 
-def estimate_lll_time(dim: int) -> tuple[float, float]:
-    """估算 LLL 耗时范围（秒），基于实际性能数据。
-
-    fpylll wrapper: ~dim^2.5 * 0.001s
-    native JIT: ~dim^2.5 * 0.01s (小维度)
-    """
-    base = (dim / 200) ** 2.5
-    # fpylll 可用时更快，native 在大维度时显著变慢
-    try:
-        import fpylll  # noqa
-        lo = max(1, base * 5)
-        hi = lo * 5
-    except ImportError:
-        lo = max(1, base * 10)
-        hi = lo * 10
-    return lo, hi
-
-
-def estimate_bkz_time(dim: int, block_size: int, max_loops: int) -> tuple[float, float]:
-    """估算 BKZ 耗时范围（秒）。"""
-    base = (dim / 200) ** 2.5 * (block_size / 10) ** 1.5
-    try:
-        import fpylll  # noqa
-        lo = max(1, base * 3 * max_loops)
-        hi = lo * 3
-    except ImportError:
-        lo = max(1, base * 5 * max_loops)
-        hi = lo * 4
-    return lo, hi
-
-
-def print_estimate(dim: int, block_size: int, max_loops: int,
-                   float_type: str, precision: int):
-    """打印参数和耗时估算。"""
-    lll_lo, lll_hi = estimate_lll_time(dim)
-    bkz_lo, bkz_hi = estimate_bkz_time(dim, block_size, max_loops)
-
-    print(f"\n{'='*50}")
-    print(f"  维度 = {dim}")
-    print(f"  BlockSize = {block_size}")
-    print(f"  Precision = {float_type}/{precision}bit" if float_type == "mpfr"
-          else f"  FloatType = {float_type}")
-    print(f"  预计 LLL: {_fmt_time(lll_lo)} ~ {_fmt_time(lll_hi)}")
-    print(f"  预计 BKZ: {_fmt_time(bkz_lo)} ~ {_fmt_time(bkz_hi)}")
-    print(f"{'='*50}\n")
-
-
-# ── LLL 进度 ────────────────────────────────────────────────────────────────
-
-class LLLProgress:
-    """LLL 约减进度 — 后台线程每秒刷新 elapsed time。
-
-    l3fp() 是单次阻塞 Python 调用，
-    Python 拿不到控制权，只能用后台线程显示计时。
-
-    输出方式:
-      - TTY: tqdm 进度条 (total=None, 纯计时模式)
-      - 非 TTY: \r 行首刷新 + 纯文本
-    """
-
-    def __init__(self, dim: int, float_type: str, precision: int):
+    def __init__(self, dim, dps=None):
         self.dim = dim
-        self.float_type = float_type
-        self.precision = precision
-        self.t0 = None
-        self._stop = threading.Event()
-        self._thread = None
-        self._pbar = None
-        self._use_tqdm = HAS_TQDM and _is_tty()
+        self.dps = dps
+        self._start_time = None
+        self._stop_event = threading.Event()
+        self._refresh_thread = None
+        self._last_line = ""
 
     def start(self):
-        self.t0 = time.time()
-
-        if self._use_tqdm:
-            self._pbar = tqdm(
-                total=None,
-                desc="LLL",
-                bar_format="{desc} | {elapsed}",
-                leave=True,
-                file=sys.stderr,
+        self._start_time = time.monotonic()
+        self._stop_event.clear()
+        if _is_tty():
+            self._refresh_thread = threading.Thread(
+                target=self._refresh_loop, daemon=True
             )
-            self._thread = threading.Thread(target=self._update_loop_tqdm, daemon=True)
-            self._thread.start()
+            self._refresh_thread.start()
+
+    def _refresh_loop(self):
+        """后台线程：每 0.3 秒刷新一次进度行。"""
+        while not self._stop_event.is_set():
+            try:
+                line = self._build_line()
+                if line != self._last_line:
+                    sys.stderr.write(f"\r{line}")
+                    sys.stderr.flush()
+                    self._last_line = line
+            except Exception:
+                pass
+            self._stop_event.wait(timeout=0.3)
+
+    def _build_line(self):
+        """子类实现：返回当前状态行文本。"""
+        raise NotImplementedError
+
+    def update(self, stats):
+        """子类实现：更新统计信息。返回 True 继续，False 停止。"""
+        raise NotImplementedError
+
+    def finish(self):
+        elapsed = time.monotonic() - self._start_time if self._start_time else 0.0
+        self._stop_event.set()
+        if self._refresh_thread and self._refresh_thread.is_alive():
+            self._refresh_thread.join(timeout=1.0)
+        # 清除进度行，输出完成信息
+        if _is_tty():
+            sys.stderr.write(f"\r{'':80}\r")
+        return elapsed
+
+    def _fmt_elapsed(self):
+        if self._start_time is None:
+            return "0:00"
+        return _fmt_time(time.monotonic() - self._start_time)
+
+
+class LLLProgress(_ProgressBase):
+    """LLL 约减实时进度追踪。"""
+
+    def __init__(self, dim, dps=None):
+        super().__init__(dim, dps)
+        self.max_stage_reached = 0
+        self.iterations = 0
+        self.swap_count = 0
+        self.size_count = 0
+        self.gso_count = 0
+
+    def _build_line(self):
+        elapsed = self._fmt_elapsed()
+        progress = self.max_stage_reached / self.dim if self.dim > 0 else 0.0
+        pct = progress * 100
+
+        # ETA
+        eta = None
+        if progress > 0:
+            remaining = (time.monotonic() - self._start_time) * (1.0 - progress) / progress
+            eta = _fmt_time(remaining)
+
+        parts = [
+            f"[LLL] dim={self.dim}",
+            f"{pct:5.1f}%",
+            f"stage={self.max_stage_reached}/{self.dim}",
+            f"iter={self.iterations}",
+            f"swap={self.swap_count}",
+        ]
+        if self.dps is not None:
+            parts.append(f"dps={self.dps}")
+        if eta:
+            parts.append(f"ETA={eta}")
+        parts.append(f"elapsed={elapsed}")
+        return "  ".join(parts)
+
+    def update(self, stats):
+        self.max_stage_reached = max(self.max_stage_reached, stats.get("max_stage_reached", 0))
+        self.iterations = stats.get("iterations", self.iterations)
+        self.swap_count = stats.get("swap_count", self.swap_count)
+        self.size_count = stats.get("size_count", self.size_count)
+        self.gso_count = stats.get("gso_count", self.gso_count)
+        return True
+
+    def finish(self):
+        elapsed = super().finish()
+        if _is_tty():
+            summary = (
+                f"LLL 完成: dim={self.dim}, "
+                f"iter={self.iterations}, swap={self.swap_count}, "
+                f"elapsed={_fmt_time(elapsed)}"
+            )
+            print(summary, file=sys.stderr)
         else:
-            # 非 TTY: 用 \r 手动刷新
-            sys.stdout.write("\nLLL 运行中... \n")
-            sys.stdout.flush()
-            self._thread = threading.Thread(target=self._update_loop_plain, daemon=True)
-            self._thread.start()
-
-    def _update_loop_tqdm(self):
-        """tqdm 模式: 每秒更新描述。"""
-        while not self._stop.is_set():
-            elapsed = time.time() - self.t0
-            self._pbar.set_description(f"LLL | elapsed={_fmt_time(elapsed)}")
-            self._pbar.refresh()
-            self._stop.wait(1.0)
-
-    def _update_loop_plain(self):
-        """纯文本模式: 用 \r 在行首刷新。"""
-        while not self._stop.is_set():
-            elapsed = time.time() - self.t0
-            msg = f"\rLLL | elapsed={_fmt_time(elapsed)}"
-            sys.stdout.write(msg)
-            sys.stdout.flush()
-            self._stop.wait(1.0)
-
-    def finish(self) -> float:
-        elapsed = time.time() - self.t0
-        self._stop.set()
-        if self._thread:
-            self._thread.join(timeout=2)
-
-        if self._pbar is not None:
-            self._pbar.set_description(f"LLL ✓ {_fmt_time(elapsed)}")
-            self._pbar.refresh()
-            self._pbar.close()
-        else:
-            # 清除当前行，输出最终状态
-            sys.stdout.write("\r" + " " * 60 + "\r")
-            print(f"LLL ✓ {_fmt_time(elapsed)}")
+            print(f"LLL 完成: {_fmt_time(elapsed)}")
         return elapsed
 
 
-# ── BKZ 进度 ────────────────────────────────────────────────────────────────
+class BKZProgress(_ProgressBase):
+    """BKZ 约减实时进度追踪。"""
 
-class BKZProgress:
-    """BKZ 约减进度 — 循环驱动，每轮更新进度条。
-
-    把 BKZ 拆成 max_loops 次单轮 bkz_se_pc() 调用，
-    每轮结束后 Python 拿回控制权更新显示。
-
-    输出方式:
-      - TTY: tqdm 进度条 (有 total, 显示 x/max_loops)
-      - 非 TTY: 每轮一行 print (不刷行, 保留历史)
-    """
-
-    def __init__(self, dim: int, block_size: int, max_loops: int,
-                 float_type: str, precision: int):
-        self.dim = dim
+    def __init__(self, dim, block_size, dps=None):
+        super().__init__(dim, dps)
         self.block_size = block_size
-        self.max_loops = max_loops
-        self.float_type = float_type
-        self.precision = precision
-        self.t0 = None
-        self.loop = 0
-        self._pbar = None
-        self._use_tqdm = HAS_TQDM and _is_tty()
+        self.z = 0
+        self.m = 0
+        self.shortest_norm = None
+        self.total_steps = max(1, dim - block_size + 1)
 
-    def start(self):
-        self.t0 = time.time()
-        self.loop = 0
+    def _build_line(self):
+        elapsed = self._fmt_elapsed()
+        progress = self.z / self.total_steps if self.total_steps > 0 else 0.0
+        pct = progress * 100
 
-        if self._use_tqdm:
-            self._pbar = tqdm(
-                total=self.max_loops,
-                desc="BKZ",
-                bar_format="{desc} | {n_fmt}/{total_fmt} |{bar}| {elapsed} | {postfix}",
-                leave=True,
-                file=sys.stderr,
+        # ETA
+        eta = None
+        if progress > 0:
+            remaining = (time.monotonic() - self._start_time) * (1.0 - progress) / progress
+            eta = _fmt_time(remaining)
+
+        norm_str = f"shortest={self.shortest_norm:.6e}" if self.shortest_norm is not None else "shortest=?"
+        parts = [
+            f"[BKZ] β={self.block_size}",
+            f"{pct:5.1f}%",
+            f"z={self.z}/{self.total_steps}",
+            norm_str,
+        ]
+        if self.dps is not None:
+            parts.append(f"dps={self.dps}")
+        if eta:
+            parts.append(f"ETA={eta}")
+        parts.append(f"elapsed={elapsed}")
+        return "  ".join(parts)
+
+    def update(self, stats):
+        self.z = max(self.z, stats.get("z", 0))
+        self.m = max(self.m, stats.get("m", 0))
+        shortest = stats.get("shortest_norm")
+        if shortest is not None:
+            if self.shortest_norm is None or shortest < self.shortest_norm:
+                self.shortest_norm = shortest
+        return True
+
+    def finish(self):
+        elapsed = super().finish()
+        if _is_tty():
+            norm_str = f", shortest={self.shortest_norm:.6e}" if self.shortest_norm is not None else ""
+            summary = (
+                f"BKZ 完成: β={self.block_size}, "
+                f"steps={self.z}/{self.total_steps}{norm_str}, "
+                f"elapsed={_fmt_time(elapsed)}"
             )
+            print(summary, file=sys.stderr)
         else:
-            # 非 TTY: 每轮一行输出
-            print(f"\nBKZ 开始 (block_size={self.block_size}, max_loops={self.max_loops})")
-
-    def update(self, loop: int, shortest_norm: float = None,
-               real_norm: float = None):
-        """每轮 BKZ 结束后调用。"""
-        self.loop = loop
-        elapsed = time.time() - self.t0
-
-        # 构建 postfix
-        parts = [f"elapsed={_fmt_time(elapsed)}"]
-        if shortest_norm is not None:
-            parts.append(f"|r*|={_fmt_norm(shortest_norm)}")
-        if real_norm is not None and real_norm > 0:
-            ratio = shortest_norm / real_norm
-            parts.append(f"ratio={ratio:.2f}x")
-        postfix = " | ".join(parts)
-
-        if self._pbar is not None:
-            self._pbar.update(1)
-            self._pbar.set_postfix_str(postfix)
-            self._pbar.refresh()
-        else:
-            # 非 TTY: 每轮一行
-            print(f"  BKZ Loop {loop}/{self.max_loops} | {postfix}")
-
-    def finish(self) -> float:
-        elapsed = time.time() - self.t0
-        if self._pbar is not None:
-            self._pbar.set_description(f"BKZ ✓ {_fmt_time(elapsed)}")
-            self._pbar.refresh()
-            self._pbar.close()
-        else:
-            print(f"BKZ ✓ {_fmt_time(elapsed)}")
+            print(f"BKZ 完成: {_fmt_time(elapsed)}")
         return elapsed

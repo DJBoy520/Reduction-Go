@@ -1,122 +1,121 @@
+"""LLL 深插入（纯 mpmath）。注入短向量后重排列，删除零向量。"""
+
 import numpy as np
+import mpmath
 
 from ..gso.delete_zero import delete_zero_vector
-from ..gso.gsofp_se import gso_step
-from ..gso.initializer import initialize
 from .L3fp_params import LOVASZ_CONDITION_PARAM
-from .reducer import size_reduction_loop
+from ..gso_mp import init_gso_mp, gso_full_refresh_mp, gso_step_mp
+from ..lll_mp import _size_reduction_lll, PrecisionFailureError
+
+MP_STUCK_THRESHOLD = 100
 
 
-def l3fp_deep_insert(
-    injected_basis_matrix,
-    gs_coeff_matrix,
-    gs_squared_norms,
-    start_stage,
-    Lovasz_cond_param=LOVASZ_CONDITION_PARAM,
-    f_c=False,
-):
-    """Executes the floating-point LLL deep insertion algorithm as presented in:
-    Lattice Basis Reduction: Improved Practical Algorithms and Solving Subset Sum Problems
-    by C. P. Schnorr and M. Euchner.
-
-    This variant of LLL reduction operates on a matrix that includes an injected short vector
-    (e.g., from an SVP solver), which introduces linear dependencies. The algorithm performs
-    deep insertion to optimally reorder the basis vectors and maintain reduction quality.
-
-    During execution, one of the column vectors in `injected_basis_matrix` will become a zero vector
-    as a result of the linear dependencies. This zero vector is detected and removed from `injected_basis_matrix`.
-
+def l3fp_deep_insert(injected_basis_matrix, gs_coeff_matrix=None,
+                     gs_squared_norms=None, start_stage=0,
+                     Lovasz_cond_param=LOVASZ_CONDITION_PARAM,
+                     f_c=False, block_start=None, dps=100):
+    """深插入（mpmath 高精度）。
 
     Args:
-        injected_basis_matrix (np.ndarray):
-            A 2D NumPy array of shape (n, m), where n<=m, representing a modified lattice basis matrix
-            that includes an injected short (column) vector.
-
-        gs_coeff_matrix (np.ndarray):
-            A 2D NumPy array of shape (n, m), where n<=m, representing the Gram-Schmidt coefficients
-            of the injected_basis_matrix.
-
-        gs_squared_norms (np.ndarray):
-                    1D NumPy array of shape (m,) representing the squared lengths of the
-            Gram-Schmidt vectors.
-
-        start_stage (int):
-            The index of the injected_basis_matrix column from which the reduction process begins.
-
-        Lovasz_cond_param (float):
-            The Lovasz condition parameter (typically in ]1/2, 1[) used to determine
-            whether a re-order is necessary during the deep insertion loop at each stage.
-
-        f_c (bool):
-            A flag used to track floating-point precision issues. If set to True and a precision flaw
-            is detected, the algorithm will backtrack one step or restart from stage 1.
+        injected_basis_matrix: (n, m) int64, 列向量基 + 注入向量。
+        start_stage: 起始 stage（注入位置）。
+        block_start: BKZ block 起始，限制搜索范围。
+        dps: mpmath 精度位数。
 
     Returns:
-        (tuple):
-            -injected_basis_matrix (np.ndarray):
-                A 2D NumPy array of shape (n, n) representing the reduced matrix after deep insertion, with the zero vector removed.
-
-            -gs_coeff_matrix (np.ndarray):
-                A 2D Numpy array of shape (n, n) representing the updated Gram-Schmidt coefficients.
-
-            -gs_squared_norms (np.ndarray):
-                A 1D Numpy array of shape (n,) representing the updated squared lengths of The Gram-Schmidt vectors.
+        (basis_int, gsc_float64, gsn_float64) — 零向量已删除，维度 -1。
     """
-    injected_basis_matrix, gs_coeff_matrix, gs_squared_norms, stage, end_stage = initialize(
-        injected_basis_matrix, gs_coeff_matrix, gs_squared_norms, start_stage
-    )
+    if injected_basis_matrix.dtype != np.int64:
+        injected_basis_matrix = injected_basis_matrix.astype(np.int64)
 
-    # Enter reduction loop
-    while stage < end_stage:
-        # Append / update Gram-Schmidt orthogonalization with current column
-        gs_squared_norms[: stage + 1], gs_coeff_matrix[:, : stage + 1] = gso_step(
-            injected_basis_matrix[:, : stage + 1],
-            gs_coeff_matrix[:, : stage + 1],
-            gs_squared_norms[: stage + 1],
-            stage,
-        )
+    n_rows, m_cols = injected_basis_matrix.shape
+    initial_cols = m_cols
+    di_min = start_stage if block_start is None else block_start
 
-        # Size reduction step
-        f_c, gs_coeff_matrix, injected_basis_matrix = size_reduction_loop(
-            stage, gs_coeff_matrix, injected_basis_matrix, f_c
-        )
+    gsc, gsn = init_gso_mp(m_cols)
+    gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, m_cols, dps)
 
-        # Check for cumulated floating-point inaccuracies
+    stage = max(start_stage, 1)
+    end_stage = m_cols
+    max_iterations = end_stage * 30
+    iterations = 0
+    f_c_count = 0
+    max_f_c = end_stage * 3
+    stuck_counter = 0
+
+    while stage < end_stage and iterations < max_iterations:
+        iterations += 1
+        gso_step_mp(injected_basis_matrix, gsc, gsn, stage, dps)
+        f_c, need_full_refresh = _size_reduction_lll(stage, gsc, gsn, injected_basis_matrix, dps)
+
+        if need_full_refresh:
+            gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, end_stage, dps)
+            stuck_counter += 1
+            if stuck_counter >= MP_STUCK_THRESHOLD:
+                raise PrecisionFailureError(
+                    f"deep_insert: stuck ({stuck_counter}) at stage {stage}", dps)
+            continue
+
         if f_c:
-            f_c = False
-            stage = max(stage - 1, 1)
+            f_c_count += 1
+            if f_c_count > max_f_c:
+                raise PrecisionFailureError(
+                    f"deep_insert: too many f_c ({f_c_count}) at stage {stage}", dps)
+            gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, end_stage, dps)
+            stuck_counter += 1
+            if stuck_counter >= MP_STUCK_THRESHOLD:
+                raise PrecisionFailureError(
+                    f"deep_insert: stuck ({stuck_counter}) at stage {stage}", dps)
             continue
 
-        # Zero vector check (appears at some point if spanning matrix has linear dependencies between columns)
         if np.all(injected_basis_matrix[:, stage] == 0):
-            injected_basis_matrix, gs_squared_norms, gs_coeff_matrix = delete_zero_vector(
-                injected_basis_matrix, gs_squared_norms, gs_coeff_matrix, stage
-            )
-            # After deleting zero vector we back up to stage 1 to ensure correct structure for GSO
+            injected_basis_matrix = np.delete(injected_basis_matrix, stage, axis=1)
+            end_stage = injected_basis_matrix.shape[1]
+            gsc, gsn = init_gso_mp(end_stage)
+            gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, end_stage, dps)
             stage = 1
-            end_stage -= 1
             continue
 
-        # Deep insertion loop
-        temp_gs_squared_norm = np.dot(
-            injected_basis_matrix[:, stage], injected_basis_matrix[:, stage]
-        )
-        i = 0
-        re_ordered = False
-        while i < stage:
-            if Lovasz_cond_param * gs_squared_norms[i] <= temp_gs_squared_norm:
-                temp_gs_squared_norm -= (gs_coeff_matrix[i, stage] ** 2) * gs_squared_norms[i]
-                i += 1
-            else:
-                # Shift all columns from i to stage one position right. We end up with [..., b_i-1, b_stage, b_i, ..., b_stage-1, b_stage+1, ...]
-                injected_basis_matrix[:, i : stage + 1] = np.roll(
-                    injected_basis_matrix[:, i : stage + 1], shift=1, axis=1
-                )
-                re_ordered = True
-                stage = max(i - 1, 1)
-                break
+        with mpmath.workdps(dps):
+            # 使用 object dtype 避免 np.dot 的 int64 溢出
+            col = injected_basis_matrix[:, stage].astype(np.int64).astype(object)
+            temp_norm = mpmath.mpf(int(col @ col))
+            delta = mpmath.mpf(Lovasz_cond_param)
+            i = di_min
+            re_ordered = False
+            while i < stage:
+                if delta * gsn[i] <= temp_norm:
+                    temp_norm -= gsc[i][stage] ** 2 * gsn[i]
+                    i += 1
+                else:
+                    injected_basis_matrix[:, i:stage + 1] = np.roll(
+                        injected_basis_matrix[:, i:stage + 1], shift=1, axis=1)
+                    re_ordered = True
+                    stage = max(i - 1, di_min)
+                    break
 
         if not re_ordered:
             stage += 1
+            stuck_counter = 0
 
-    return injected_basis_matrix, gs_coeff_matrix, gs_squared_norms
+    # 兜底：用 GSO 范数检测线性相关列
+    if end_stage == initial_cols:
+        gsc_chk, gsn_chk = init_gso_mp(end_stage)
+        gso_full_refresh_mp(injected_basis_matrix, gsc_chk, gsn_chk, end_stage, dps)
+        deleted = False
+        for col in range(end_stage - 1, -1, -1):
+            if float(gsn_chk[col]) <= 0 or np.all(injected_basis_matrix[:, col] == 0):
+                injected_basis_matrix = np.delete(injected_basis_matrix, col, axis=1)
+                end_stage -= 1
+                deleted = True
+        if not deleted:
+            raise PrecisionFailureError(
+                f"deep_insert: no zero vector after {iterations} iterations", dps)
+
+    gsc_out, gsn_out = init_gso_mp(end_stage)
+    gso_full_refresh_mp(injected_basis_matrix, gsc_out, gsn_out, end_stage, dps)
+    from ..gso_mp import gso_coeffs_to_float, gso_norms_to_float
+    return (injected_basis_matrix,
+            gso_coeffs_to_float(gsc_out, end_stage, end_stage),
+            gso_norms_to_float(gsn_out, end_stage))

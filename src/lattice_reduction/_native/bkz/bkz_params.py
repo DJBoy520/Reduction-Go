@@ -1,8 +1,15 @@
-# Define the lattice dimension
-LATTICE_DIMENSION = 10
-# Upper bound for generated entry values
-ENTRY_BOUND = 173
-# Block-size parameter beta in ]2, N[
-BLOCK_SIZE = LATTICE_DIMENSION//2
-# Reduction parameter 1/2 < DELTA < 1
-DELTA = 3/4
+"""BKZ 约减参数。"""
+
+DELTA = 3 / 4
+
+# mpmath 精度配置
+AUTO_PRECISION_DIM_LOW = 150
+AUTO_PRECISION_DIM_HIGH = 250
+MP_DPS_LOW = 50
+MP_DPS_HIGH = 100
+MP_STUCK_THRESHOLD = 100
+MP_MAX_RETRY = 1
+
+PRECISION_MODE_LOW = 0
+PRECISION_MODE_AUTO = 1
+PRECISION_MODE_HIGH = 2

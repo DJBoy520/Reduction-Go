@@ -24,9 +24,9 @@ import time
 import numpy as np
 
 from .lattice_reduction import lll_reduce, bkz_reduce
-
+from .lattice_reduction._native.precision_manager import get_initial_dps
 from .poly_math import mat_vec_mul, vec_add_mod
-from .progress import LLLProgress, BKZProgress
+from .progress import LLLProgress, BKZProgress, print_estimate
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,40 @@ def build_lattice_basis(A: np.ndarray, t: np.ndarray, q: int) -> np.ndarray:
         A: 多项式矩阵 (k, l, n)
         t: 目标向量 (标准模式用完整 t; Power2Round 模式用 t_recon = t1·2^d)
         q: 模数
+
+
+    【核心思想】逆向构造 (Reverse Engineering)
+    我们想让一个特定的短向量 v = (s, e, W) 必然属于这个格。
+    为此，我们预先设定好整数组合系数 z = (s, 0, 1)^T，然后反推出基矩阵 B
+    必须长什么样，才能满足 z^T * B = (s, e, W)。
+
+    【数学推导】
+    已知 LWE 关系：t = A·s + e  (mod q)，因此 e = t - A·s。
+
+    我们希望找到矩阵 B，使得：
+        [s^T, 0^T, 1] * B = [s^T, e^T, W]
+
+    将 B 按列分块为 [左块 | 中块 | 右块]：
+
+    1. 左块 (对应输出 s)：
+       必须提取出 z 的第一部分 s，因此放置单位阵 I。
+       故左块为: [ I, 0, 0 ]^T
+
+    2. 中块 (对应输出 e)：
+       必须计算 s*(-A^T) + 1*(t^T) = -A·s + t = e。
+       其中 qI 用于提供模 q 的周期格结构（允许向量在模 q 下归约）。
+       故中块为: [ -A^T, qI, t^T ]^T
+
+    3. 右块 (对应输出 W)：
+       必须提取 z 最后的常数 1，乘以 W。
+       故右块为: [ 0, 0, W ]^T
+
+    拼合矩阵 B 即：
+        [ I_{ln}   | -A_flat^T  | 0     ]
+        [ 0        | q·I_kn     | 0     ]
+        [ 0        | t_flat^T   | W     ]
+
+    这样，格中的短向量 (s, e, W) 就自然“暴露”出来了，可使用 BKZ/LLL 恢复。
 
     Returns:
         numpy int64 数组 (行向量基), shape (dim, dim)
@@ -126,7 +160,9 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
                lll_delta: float = 0.79,
                bkz_auto_abort: bool = False,
                float_type: str = "mpfr",
-               precision: int = 200) -> dict:
+               precision: int = 200,
+               auto_precision: bool = True,
+               mp_dps: int = None) -> dict:
     """Run the full lattice attack: build basis → LLL → BKZ → extract & verify.
 
     t 参数: 标准模式传完整 t; Power2Round 模式传 t_recon = t1·2^d。
@@ -139,6 +175,7 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
     kn = k * n
     ln = l * n
     dim = kn + ln + 1
+    dps, _ = get_initial_dps(dim, mp_dps, auto_precision)
 
     # ── Build basis ──
     logger.info(f"[3/5] 构造格基矩阵 ({dim}×{dim})...")
@@ -150,14 +187,20 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
     mem_mb = dim * dim * 8 / (1024 ** 2)
     logger.debug(f"格基预估内存占用: {mem_mb:.2f} MB ({dim}×{dim}, int64)")
 
-    # ── LLL ──
-    logger.info(f"[4/5] LLL 约减 (维度 {dim}, {float_type}/{precision}bit)")
+    # ── 运行预估 ──
+    print_estimate(dim, bkz_block_size, bkz_max_loops,
+                   float_type=float_type, precision=precision, dps=dps)
 
-    lll_progress = LLLProgress(dim, float_type, precision)
+    # ── LLL ──
+    logger.info(f"[4/5] LLL 约减 (维度 {dim}, mpmath dps={dps})")
+
+    lll_progress = LLLProgress(dim, dps=dps)
     lll_progress.start()
-    lll_reduce(B, delta=lll_delta, float_type=float_type, precision=precision)
+    lll_reduce(B, delta=lll_delta, float_type=float_type, precision=precision,
+               auto_precision=auto_precision, mp_dps=mp_dps,
+               progress=lll_progress)
     result["lll_time"] = lll_progress.finish()
-    logger.info(f"    LLL 完成: {result['lll_time']:.3f}s")
+    logger.info(f"  LLL 完成: {result['lll_time']:.3f}s")
 
     # ── BKZ ──
     if no_bkz:
@@ -176,9 +219,12 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
             np.sum(s2_c.astype(np.int64) ** 2)
         ))
 
-        bkz_progress = BKZProgress(dim, bkz_block_size, bkz_max_loops,
-                                    float_type, precision)
+        bkz_progress = BKZProgress(dim, bkz_block_size, bkz_max_loops, dps=dps)
         bkz_progress.start()
+
+        # 直接回调更新进度（无后台线程，避免竞争）
+        def _bkz_cb(z, m, shortest, loop_i, total_loops):
+            bkz_progress.update_detail(loop_i, total_loops, z, m, shortest, real_norm_for_ratio)
 
         t_bkz = time.time()
 
@@ -190,12 +236,19 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
             auto_abort=bkz_auto_abort,
             float_type=float_type,
             precision=precision,
+            auto_precision=auto_precision,
+            mp_dps=mp_dps,
+            progress_cb=_bkz_cb,
         )
 
-        # 更新进度显示
-        for loop_i, shortest in enumerate(bkz_result["shortest_norms"], 1):
-            bkz_progress.update(loop_i, shortest_norm=shortest,
-                                real_norm=real_norm_for_ratio)
+        # 最终状态
+        bkz_progress.update_detail(
+            bkz_progress.loop,
+            bkz_progress.total_loops,
+            bkz_progress.z,
+            bkz_progress.m,
+            bkz_progress.shortest_norm,
+            real_norm_for_ratio)
 
         result["bkz_time"] = bkz_progress.finish()
         result["bkz_loops"] = bkz_result["completed_loops"]
