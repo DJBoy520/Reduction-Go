@@ -30,8 +30,10 @@ def _fmt_time(seconds):
     return f"{m:d}:{s:02d}"
 
 
-def print_estimate(dim, block_size, beta):
-    """打印预估时间（不使用 tqdm），一次性输出。"""
+def print_estimate(dim, block_size, beta, *args, **kwargs):
+    """打印预估时间（不使用 tqdm），一次性输出。
+    *args/**kwargs 兼容调用方传入 float_type, precision, dps 等额外参数。
+    """
     if dim <= 0 or block_size <= 0:
         print(f"[预估] dim={dim}, block_size={block_size}, β={beta}")
         return
@@ -139,6 +141,17 @@ class LLLProgress(_ProgressBase):
             parts.append(f"ETA={eta}")
         parts.append(f"elapsed={elapsed}")
         return "  ".join(parts)
+
+    def update_stats(self, stage, iterations, swap_count, size_count, gso_count):
+        """适配 lll_mp 的位置参数调用，转换为字典格式后交给 update()。"""
+        stats = {
+            "max_stage_reached": stage,
+            "iterations": iterations,
+            "swap_count": swap_count,
+            "size_count": size_count,
+            "gso_count": gso_count,
+        }
+        return self.update(stats)
 
     def update(self, stats):
         self.max_stage_reached = max(self.max_stage_reached, stats.get("max_stage_reached", 0))
