@@ -1,2 +1,3 @@
 numpy>=1.24
 mpmath>=1.3
+asn1crypto>=2.0

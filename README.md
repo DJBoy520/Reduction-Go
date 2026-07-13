@@ -40,15 +40,12 @@ Reduction-Go/
 ## 依赖
 
 ```bash
-pip install numpy tqdm asn1crypto
-# 可选：Numba JIT 加速（推荐，性能提升 5-20 倍）
-pip install numba
+pip install -r requirements.txt
 ```
 
 - **numpy** — 矩阵运算
-- **tqdm** — 进度条
+- **mpmath** — 多精度浮点运算（格约减核心精度引擎）
 - **asn1crypto** — X.509 证书 ASN.1 解析
-- **numba**（可选）— JIT 即时编译加速，无 Numba 时自动降级为纯 Python
 
 无 C/C++ 依赖，无需 GMP/MPFR，纯 Python 环境即可运行。
 
@@ -78,7 +75,7 @@ python3 main.py toy --bkz-block-size 5 --bkz-max-loops 2
 | `ML-DSA-65` | 6 | 6 | 256 | 3073 | 30 | mpfr/200 | **~1,000,000** | FIPS 204 标准 |
 | `ML-DSA-87` | 8 | 8 | 256 | 4097 | 35 | mpfr/200 | **~3,000,000** | FIPS 204 标准 |
 
-> **相对耗时说明**：以最小参数集（`toy --n 10`，格维度 41）的 LLL 约减时间为基准 1，其他参数集的耗时为相对倍数。实际耗时取决于硬件性能，开启 Numba JIT 可获得 5-20 倍加速。
+> **相对耗时说明**：以最小参数集（`toy --n 10`，格维度 41）的 LLL 约减时间为基准 1，其他参数集的耗时为相对倍数。实际耗时取决于硬件性能。
 > 
 > 耗时与格维度呈超线性关系（约 O(n²·³)），维度每翻倍，耗时约增长 5-6 倍。
 | `ML-DSA-87` | 8 | 8 | 256 | 4097 | 35 | mpfr/200 | FIPS 204 标准 | 真实参数 |
@@ -119,7 +116,6 @@ python3 main.py toy --no-bkz --n 10 --k 2 --l 2 --seed 42
 ```
 
 - 格维度：2×10 + 2×10 + 1 = **41**
-- 耗时：**< 0.1 秒**
 - 用途：开发调试、快速验证代码改动
 
 ### 示例 2：标准 toy 参数，LLL 约减
@@ -129,7 +125,6 @@ python3 main.py toy --no-bkz --verbose
 ```
 
 - 格维度：**201**
-- 耗时：**约 30-60 秒**
 - 用途：日常测试，LLL 单独即可在小维度完美恢复私钥
 
 ### 示例 3：toy 参数 + BKZ 完整攻击
@@ -139,7 +134,6 @@ python3 main.py toy --bkz-block-size 5 --bkz-max-loops 2 --seed 42
 ```
 
 - 格维度：**201**，BKZ block=5
-- 耗时：**约 1-2 分钟**
 - 用途：验证 BKZ 流程完整性
 
 ### 示例 4：medium 参数，MPFR 高精度
@@ -149,7 +143,6 @@ python3 main.py medium --verbose
 ```
 
 - 格维度：**481**，MPFR 200-bit
-- 耗时：**约数分钟**
 - 用途：中等规模验证
 
 ### 示例 5：hard 参数，大维度挑战
@@ -159,7 +152,6 @@ python3 main.py hard --bkz-auto-abort --seed 42
 ```
 
 - 格维度：**961**，BKZ block=20
-- 耗时：**约数十分钟**
 - 用途：大维度性能测试
 
 ### 示例 6：自定义维度
@@ -235,7 +227,7 @@ bash manage.sh stop
 | ~1000 | ~30,000 | ~500,000 | 性能测试 |
 | ~2000+ | ~300,000 | 不推荐 | 需要耐心 |
 
-> 实际耗时取决于硬件和是否开启 Numba JIT。JIT 模式下可获得 5-20 倍加速。
+> 实际耗时取决于硬件性能。
 
 ### BKZ block_size 选择
 
