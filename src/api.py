@@ -24,11 +24,11 @@ import numpy as np
 from .utils.params import get_params, get_d
 from .keys.keygen import keygen, expand_a
 from .keys.pubkey import save_public_key, load_public_key
-from src.lattice_attack import run_attack as _lattice_run_attack, classify_results, verify_basis
-from src.protocol_adapter import ProtocolAdapter
-from src.poly_math import mat_vec_mul, vec_add_mod
+from .lattice_attack import run_attack as _lattice_run_attack, classify_results, verify_basis
+from .protocol.power2round import ProtocolAdapter
+from .poly_math import mat_vec_mul, vec_add_mod
 from .keys.cert_parser import parse_certificate
-from src.progress import print_estimate
+from .progress import print_estimate
 
 logger = logging.getLogger(__name__)
 
@@ -315,9 +315,11 @@ def run_synthetic_attack(
         s2_attack = s2_prime.reshape(k, n)
 
     # 格基验证
-    basis_ok = verify_basis(A, t_attack, q, s1, s2_attack)
-    if not basis_ok:
-        raise ValueError("格基验证失败，目标向量不在格中")
+    basis_result = verify_basis(A, t_attack, q, s1, s2_attack)
+    if not basis_result.passed:
+        raise ValueError(
+            f"格基验证失败: {basis_result.error or '目标向量不在格中'}"
+        )
     logger.info(f"  格基验证: ✓ v_target 在格中")
 
     # ── [3/5]–[5/5] 格攻击 ──

@@ -96,6 +96,24 @@ class PrecisionContext:
         logger.warning(f"精度升级: dps={MP_DPS_HIGH} (第 {self.retry_count} 次重试)")
         return self.current_dps
 
+    def handle_precision_failure(self, exc: PrecisionFailureError) -> int:
+        """处理精度失败：若可升级则升级精度，否则抛出异常。
+
+        Args:
+            exc: 捕获到的精度失败异常，包含 reason 和 current_dps。
+
+        Returns:
+            升级后的新 dps 值。
+
+        Raises:
+            ReductionFailedError: 当精度已达上限无法继续升级时。
+        """
+        if not self.can_upgrade():
+            raise ReductionFailedError(
+                f"精度升级已达上限 (dim={self.dim}, dps={self.current_dps})，原因: {exc.reason}"
+            ) from exc
+        return self.upgrade_dps()
+
     def reset_basis(self):
         """重置回原始整数基。"""
         return self.original_basis.copy()

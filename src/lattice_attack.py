@@ -140,17 +140,37 @@ def verify_basis(A: np.ndarray, t_target: np.ndarray, q: int,
 
     注意: s2_target 和 t_target 不一定是原始私钥。
     Power2Round 模式下它们分别是 s2' = s2 - t0 和 t_recon = t1·2^d。
+
+    Returns
+    -------
+    VerifyResult : 结构化验证结果
+        - valid_structure : 结构是否合法
+        - equation_checked : 是否执行了方程验证（此处始终为 True）
+        - passed : 方程是否成立
+        - error : 失败原因（可选）
     """
+    from .domain.result import VerifyResult
+
     k, l, n = A.shape
     A_flat = _build_A_flat(A)
-    s1_flat = s1.flatten().astype(np.int64)
-    s2_flat = s2_target.flatten().astype(np.int64)
-    t_flat = t_target.flatten().astype(np.int64)
 
-    residual = (A_flat @ s1_flat + s2_flat - t_flat) % q
+    # 使用 Python int (object dtype) 避免 int64 溢出
+    s1_flat = s1.flatten().astype(object)
+    s2_flat = s2_target.flatten().astype(object)
+    t_flat = t_target.flatten().astype(object)
+
+    residual = (A_flat.astype(object) @ s1_flat + s2_flat - t_flat) % q
     ok = bool(np.all(residual == 0))
-    logger.info(f"verify_basis: {'A·s1 + s2_target ≡ t_target (mod q) ✓' if ok else '方程不成立 ✗'}")
-    return ok
+    if ok:
+        logger.info("verify_basis: A·s1 + s2_target ≡ t_target (mod q) ✓")
+    else:
+        logger.warning("verify_basis: A·s1 + s2_target ≢ t_target (mod q) ✗")
+    return VerifyResult(
+        valid_structure=True,
+        equation_checked=True,
+        passed=ok,
+        error="" if ok else "方程验证失败: A·s1 + s2_target ≢ t_target (mod q)",
+    )
 
 
 def run_attack(A: np.ndarray, t: np.ndarray, q: int,
@@ -222,9 +242,9 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
         bkz_progress = BKZProgress(dim, bkz_block_size, bkz_max_loops, dps=dps)
         bkz_progress.start()
 
-        # 直接回调更新进度（无后台线程，避免竞争）
-        def _bkz_cb(z, m, shortest, loop_i, total_loops):
-            bkz_progress.update_detail(loop_i, total_loops, z, m, shortest, real_norm_for_ratio)
+        # 直接回调更新进度（统一签名：current_iter, total_iters, shortest_norm）
+        def _bkz_cb(current, total, shortest):
+            bkz_progress.update({"z": current, "m": total, "shortest_norm": shortest})
 
         t_bkz = time.time()
 
@@ -242,13 +262,11 @@ def run_attack(A: np.ndarray, t: np.ndarray, q: int,
         )
 
         # 最终状态
-        bkz_progress.update_detail(
-            bkz_progress.loop,
-            bkz_progress.total_loops,
-            bkz_progress.z,
-            bkz_progress.m,
-            bkz_progress.shortest_norm,
-            real_norm_for_ratio)
+        bkz_progress.update({
+            "z": bkz_progress.z,
+            "m": bkz_progress.m,
+            "shortest_norm": bkz_progress.shortest_norm,
+        })
 
         result["bkz_time"] = bkz_progress.finish()
         result["bkz_loops"] = bkz_result["completed_loops"]

@@ -226,7 +226,7 @@ def test_full_attack_toy():
     s2 = np.random.randint(0, 3, (k, n))
     t = vec_add_mod(mat_vec_mul(A, s1, q), s2, q) % q
     ok = verify_basis(A, t, q, s1, s2)
-    assert ok, "Basis verification failed"
+    assert ok.passed, f"Basis verification failed: {ok.error}"
     result = run_attack(A, t, q, s1, s2, no_bkz=True)
     perfect = sum(1 for c in result["candidates"] if c.get("perfect"))
     assert perfect >= 1, f"Should find perfect recovery, found {perfect}"

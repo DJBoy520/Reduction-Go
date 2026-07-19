@@ -1,15 +1,15 @@
-# lattice_reduction 模块使用说明
+# lattice 模块使用说明
 
 ## 概述
 
-`lattice_reduction` 是纯 Python 格基约减算法模块，替代原 fpylll/fplll C++ 依赖。
+`lattice` 是纯 Python 格基约减算法模块，替代原 fpylll/fplll C++ 依赖。
 基于 [LatticeReductionAlgorithms](https://github.com/vttresearch/LatticeReductionAlgorithms)（GPL v2）。
 
 ## 快速开始
 
 ```python
 import numpy as np
-from src.lattice_reduction import lll_reduce, bkz_reduce, evaluate_basis_quality
+from src.lattice import lll_reduce, bkz_reduce, evaluate_basis_quality
 
 # 创建一个随机格基（行向量格式）
 B = np.random.randint(0, 100, size=(10, 10)).astype(np.int64)

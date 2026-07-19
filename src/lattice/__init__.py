@@ -7,12 +7,16 @@
 
 from .adapter import (
     lll_reduce, lll_reduce_full, bkz_reduce,
+    evaluate_basis_quality,
+    LatticeReducer, ReductionResult,
     LatticeReductionError, InvalidBasisError, ReductionFailedError,
     PrecisionFailureError,
 )
 
 __all__ = [
     "lll_reduce", "lll_reduce_full", "bkz_reduce",
+    "evaluate_basis_quality",
+    "LatticeReducer", "ReductionResult",
     "LatticeReductionError", "InvalidBasisError", "ReductionFailedError",
     "PrecisionFailureError",
 ]

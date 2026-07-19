@@ -47,7 +47,7 @@ def l3fp_deep_insert(injected_basis_matrix, gs_coeff_matrix=None,
     while stage < end_stage and iterations < max_iterations:
         iterations += 1
         gso_step_mp(injected_basis_matrix, gsc, gsn, stage, dps)
-        f_c, need_full_refresh = _size_reduction_lll(stage, gsc, gsn, injected_basis_matrix, dps)
+        f_c, need_full_refresh, _ = _size_reduction_lll(stage, gsc, gsn, injected_basis_matrix, dps)
 
         if need_full_refresh:
             gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, end_stage, dps)
@@ -116,6 +116,34 @@ def l3fp_deep_insert(injected_basis_matrix, gs_coeff_matrix=None,
     gsc_out, gsn_out = init_gso_mp(end_stage)
     gso_full_refresh_mp(injected_basis_matrix, gsc_out, gsn_out, end_stage, dps)
     from ..gso_mp import gso_coeffs_to_float, gso_norms_to_float
+    # ========================================================================
+    # 阶段 5：统一后置清理 —— 删除所有零范数列
+    # ========================================================================
+    if end_stage > 0:
+        gsc_chk, gsn_chk = init_gso_mp(end_stage)
+        gso_full_refresh_mp(injected_basis_matrix, gsc_chk, gsn_chk, end_stage, dps)
+
+        cols_to_delete = []
+        for col in range(end_stage - 1, -1, -1):
+            norm_val = float(gsn_chk[col])
+            is_zero_norm = norm_val <= 1e-30
+            is_zero_col = np.all(injected_basis_matrix[:, col] == 0)
+            if is_zero_norm or is_zero_col:
+                cols_to_delete.append(col)
+
+        if cols_to_delete:
+            injected_basis_matrix = np.delete(injected_basis_matrix, cols_to_delete, axis=1)
+            end_stage = injected_basis_matrix.shape[1]
+
+    # ========================================================================
+    # 最终 GSO 计算
+    # ========================================================================
+    if end_stage > 0:
+        gsc_out, gsn_out = init_gso_mp(end_stage)
+        gso_full_refresh_mp(injected_basis_matrix, gsc_out, gsn_out, end_stage, dps)
+    else:
+        gsc_out, gsn_out = [], []
+
     return (injected_basis_matrix,
             gso_coeffs_to_float(gsc_out, end_stage, end_stage),
             gso_norms_to_float(gsn_out, end_stage))

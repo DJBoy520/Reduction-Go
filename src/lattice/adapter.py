@@ -172,7 +172,7 @@ def bkz_reduce(B, block_size=20, max_loops=8, enum_algo="1",
 
     Args:
         B: numpy int64 行向量基
-        progress_cb: 逐迭代进度回调 fn(z, m, shortest_norm)
+        progress_cb: 逐迭代进度回调 fn(current_iter, total_iters, shortest_norm)
 
     Returns:
         dict: {"completed_loops": int, "shortest_norms": list[float]}
@@ -205,10 +205,10 @@ def bkz_reduce(B, block_size=20, max_loops=8, enum_algo="1",
 
                 # 包装 progress_cb 以收集 shortest_norms
                 _collected = []
-                def _progress_wrap(z, m, sn, _c=_collected, _ext_cb=progress_cb):
+                def _progress_wrap(current, total, sn, _c=_collected, _ext_cb=progress_cb):
                     _c.append(sn)
                     if _ext_cb is not None:
-                        _ext_cb(z, m, sn)
+                        _ext_cb(current, total, sn)
 
                 _ret_basis, _ret_gsc, _ret_gsn = bkz(
                     basis_copy, bs, enum_algo,
@@ -233,13 +233,81 @@ def bkz_reduce(B, block_size=20, max_loops=8, enum_algo="1",
     }
 
 
-__all__ = [
-    # 工具函数
-    "validate_basis", "validate_delta", "validate_block_size",
-    "to_column_basis", "to_row_basis",
-    # 异常类（重新导出）
-    "LatticeReductionError", "InvalidBasisError", "ReductionFailedError",
-    "PrecisionFailureError",
-    # 约减接口
-    "lll_reduce", "lll_reduce_full", "bkz_reduce",
-]
+def evaluate_basis_quality(B, reduced=False):
+    """评估格基质量，返回质量指标字典。"""
+    B = np.asarray(B, dtype=np.float64)
+    n, m = B.shape
+    if n == 0:
+        return {"det_ratio": 0.0, "orthogonal_defect": 0.0,
+                "shortest_norm": 0.0, "reduced": reduced}
+
+    gram = B @ B.T
+    det_gram = np.linalg.det(gram)
+    if det_gram <= 0:
+        det_gram = 1e-300
+
+    row_norms = np.linalg.norm(B, axis=1)
+    hadamard = np.prod(row_norms)
+    det_ratio = (det_gram ** (1.0 / n)) / hadamard if hadamard > 0 else 0.0
+
+    frob = np.sqrt(np.sum(row_norms ** 2))
+    orth_defect = frob / (det_gram ** (1.0 / (2 * n))) if det_gram > 0 else 0.0
+
+    return {
+        "det_ratio": float(det_ratio),
+        "orthogonal_defect": float(orth_defect),
+        "shortest_norm": float(np.min(row_norms)),
+        "reduced": reduced,
+    }
+
+
+class ReductionResult:
+    """约减结果容器，兼容 smoke_adapter 测试期望。"""
+    def __init__(self, basis=None, success=True, message="", algorithm="lll",
+                 quality=None, lattice_quality=None, norm_quality=None,
+                 completed_loops=0, shortest_norms=None):
+        self.basis = basis
+        self.success = success
+        self.message = message
+        self.algorithm = algorithm
+        self.quality = quality or {}
+        self.lattice_quality = lattice_quality
+        self.norm_quality = norm_quality
+        self.completed_loops = completed_loops
+        self.shortest_norms = shortest_norms or []
+
+    def __repr__(self):
+        return f"ReductionResult(success={self.success}, algorithm={self.algorithm})"
+
+
+class LatticeReducer:
+    """高级约减接口，兼容 smoke_adapter 测试期望。"""
+    def __init__(self):
+        pass
+
+    def reduce(self, basis, delta=0.99, algorithm="lll", **kwargs):
+        """执行约减并返回 ReductionResult。"""
+        try:
+            if algorithm == "bkz":
+                result = bkz_reduce(basis, **kwargs)
+            else:
+                result = lll_reduce(basis, delta=delta, **kwargs)
+            return ReductionResult(
+                basis=result.get("basis"),
+                success=result.get("success", True),
+                message=result.get("message", ""),
+                algorithm=algorithm,
+                quality=result.get("quality", {}),
+                lattice_quality=result.get("lattice_quality"),
+                norm_quality=result.get("norm_quality"),
+                completed_loops=result.get("completed_loops", 0),
+                shortest_norms=result.get("shortest_norms", []),
+            )
+        except Exception as e:
+            return ReductionResult(success=False, message=str(e), algorithm=algorithm)
+
+    def lll(self, basis, delta=0.99, **kwargs):
+        return self.reduce(basis, delta=delta, algorithm="lll", **kwargs)
+
+    def bkz(self, basis, **kwargs):
+        return self.reduce(basis, algorithm="bkz", **kwargs)

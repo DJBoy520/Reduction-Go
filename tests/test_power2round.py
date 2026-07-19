@@ -6,7 +6,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 import numpy as np
-from src.protocol_adapter import (
+from src.protocol.power2round import (
     ProtocolAdapter, power2round_encode, power2round_decode,
     get_error_bound
 )

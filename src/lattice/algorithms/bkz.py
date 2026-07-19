@@ -36,7 +36,7 @@ def bkz(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
         block_size: BKZ 块大小。
         enum_algo: 枚举算法 key。
         dps: mpmath 精度位数。
-        progress_cb: 可选进度回调 fn(z, m, shortest_norm)，每轮迭代后调用。
+        progress_cb: 可选进度回调 fn(current_iter, total_iters, shortest_norm)，每轮迭代后调用。
 
     Returns:
         (basis_matrix, gsc_float64, gsn_float64)
@@ -112,11 +112,11 @@ def bkz(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
 
         z += 1
 
-        # 进度回调
+        # 进度回调（统一签名：current_iter, total_iters, shortest_norm）
         if progress_cb is not None:
             norms = np.linalg.norm(basis_matrix.astype(np.float64), axis=0)
             shortest = float(np.min(norms[norms > 0])) if np.any(norms > 0) else 0.0
-            progress_cb(z, m, shortest)
+            progress_cb(total_iters, max_total_iters, shortest)
 
     return basis_matrix, gs_coeff_matrix, gs_squared_norms
 
