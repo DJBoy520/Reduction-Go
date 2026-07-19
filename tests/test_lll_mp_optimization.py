@@ -71,8 +71,8 @@ print("=" * 60)
 print("\n[1] 小维度 LLL 正确性 (dim=10, 20, 30)")
 
 def test_dim(n, seed=42):
-    from src.lattice_reduction._native.lll_mp import lll_mp
-    from src.lattice_reduction._native.gso_mp import init_gso_mp, gso_full_refresh_mp
+    from src.lattice.algorithms.lll import lll_mp
+    from src.lattice.base.gso import init_gso_mp, gso_full_refresh_mp
 
     basis = random_integer_matrix(n, bound=100, seed=seed)
     basis_copy = basis.copy()
@@ -114,7 +114,7 @@ check("LLL dim=30", lambda: test_dim(30))
 print("\n[2] 多随机种子鲁棒性 (dim=15, 10 seeds)")
 
 def test_multi_seed():
-    from src.lattice_reduction._native.lll_mp import lll_mp
+    from src.lattice.algorithms.lll import lll_mp
 
     n = 15
     delta = 0.79
@@ -142,7 +142,7 @@ check("多种子鲁棒性", test_multi_seed)
 print("\n[3] 大维度性能 (dim=50, 80)")
 
 def test_perf(n, seed=42):
-    from src.lattice_reduction._native.lll_mp import lll_mp
+    from src.lattice.algorithms.lll import lll_mp
 
     basis = random_integer_matrix(n, bound=100, seed=seed)
     basis_copy = basis.copy()
@@ -170,7 +170,7 @@ check("性能 dim=80", lambda: test_perf(80))
 print("\n[4] 已约减基应快速完成且结果合理")
 
 def test_already_reduced():
-    from src.lattice_reduction._native.lll_mp import lll_mp
+    from src.lattice.algorithms.lll import lll_mp
 
     # 构造一个正交基（已经满足 LLL 条件）
     n = 10
@@ -198,8 +198,8 @@ print("\n[5] 与 gso_full_refresh 全量重算结果一致性")
 def test_consistency_full_refresh():
     """用 gso_full_refresh 重新计算 f_c 分支后的 GSO，对比 gso_step_mp 的结果。"""
     import copy
-    from src.lattice_reduction._native.lll_mp import lll_mp, _size_reduction_lll
-    from src.lattice_reduction._native.gso_mp import (
+    from src.lattice.algorithms.lll import lll_mp, _size_reduction_lll
+    from src.lattice.base.gso import (
         init_gso_mp, gso_step_mp, gso_full_refresh_mp
     )
 
@@ -261,8 +261,8 @@ print("\n[5b] 构造极端基以触发 f_c 分支")
 def test_f_c_trigger():
     """构造极端非正交基，使得 |mu| > tau_limit，强制触发 f_c。"""
     import copy
-    from src.lattice_reduction._native.lll_mp import _size_reduction_lll
-    from src.lattice_reduction._native.gso_mp import (
+    from src.lattice.algorithms.lll import _size_reduction_lll
+    from src.lattice.base.gso import (
         init_gso_mp, gso_step_mp, gso_full_refresh_mp,
     )
 

@@ -23,8 +23,8 @@ import time
 
 import numpy as np
 
-from .lattice_reduction import lll_reduce, bkz_reduce
-from .lattice_reduction._native.precision_manager import get_initial_dps
+from .lattice import lll_reduce, bkz_reduce
+from .lattice.base.precision import get_initial_dps
 from .poly_math import mat_vec_mul, vec_add_mod
 from .progress import LLLProgress, BKZProgress, print_estimate
 

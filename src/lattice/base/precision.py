@@ -4,13 +4,13 @@ import hashlib
 import logging
 import numpy as np
 
-from .bkz.bkz_params import (
+from .precision_constants import (
     AUTO_PRECISION_DIM_LOW, AUTO_PRECISION_DIM_HIGH,
     MP_DPS_LOW, MP_DPS_HIGH, MP_STUCK_THRESHOLD, MP_MAX_RETRY,
     PRECISION_MODE_LOW, PRECISION_MODE_AUTO, PRECISION_MODE_HIGH,
 )
-from .precision import PrecisionFailureError
-from ..adapter.common_adapter import ReductionFailedError
+from .precision_errors import PrecisionFailureError
+from .exceptions import ReductionFailedError
 
 logger = logging.getLogger(__name__)
 

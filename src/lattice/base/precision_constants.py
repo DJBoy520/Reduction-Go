@@ -1,6 +1,7 @@
-"""BKZ 约减参数。"""
+"""精度相关常量 — 被 base/precision.py 和 algorithms/bkz_params.py 共用。
 
-DELTA = 3 / 4
+放在此处是为了打破 precision.py → bkz/ 的循环导入依赖。
+"""
 
 # mpmath 精度配置
 AUTO_PRECISION_DIM_LOW = 150

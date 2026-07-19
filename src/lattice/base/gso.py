@@ -10,7 +10,7 @@
 import numpy as np
 import mpmath
 
-from .precision import PrecisionFailureError
+from .precision_errors import PrecisionFailureError
 
 
 def _int_dot(col_a: np.ndarray, col_b: np.ndarray) -> int:
@@ -219,3 +219,16 @@ def gso_coeffs_to_float(gsc_mp: list, m: int, n: int) -> np.ndarray:
         for j in range(n):
             result[i, j] = float(gsc_mp[i][j])
     return result
+
+
+def delete_zero_vector(
+    basis_matrix: np.ndarray,
+    gs_coeff_matrix: np.ndarray,
+    gs_squared_norms: np.ndarray,
+    pos: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """删除第 pos 列（零向量），返回更新后的三元组。"""
+    basis_matrix = np.delete(basis_matrix, pos, axis=1)
+    gs_coeff_matrix = np.delete(gs_coeff_matrix, pos, axis=1)
+    gs_squared_norms = np.delete(gs_squared_norms, pos, axis=1)
+    return basis_matrix, gs_coeff_matrix, gs_squared_norms

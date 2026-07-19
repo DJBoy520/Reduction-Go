@@ -12,7 +12,7 @@ ML-DSA parameter configuration module.
 
 # ── 公共常量 ─────────────────────────────────────────────────────────────────
 
-from src.lattice_reduction._native.bkz.bkz_params import MP_DPS_LOW, MP_DPS_HIGH
+from src.lattice.base.precision_constants import MP_DPS_LOW, MP_DPS_HIGH
 
 MLDSA_Q = 8380417  # 2^23 - 2^13 + 1
 

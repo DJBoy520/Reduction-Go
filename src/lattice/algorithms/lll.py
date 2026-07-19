@@ -8,13 +8,13 @@ import logging
 import numpy as np
 import mpmath
 
-from .gso_mp import (
+from ..base.gso import (
     _int_dot,
     gso_step_mp, gso_full_refresh_mp, gso_swap_update_mp,
     init_gso_mp,
     gso_norms_to_float, gso_coeffs_to_float,
 )
-from .precision import PrecisionFailureError
+from ..base.precision_errors import PrecisionFailureError
 
 logger = logging.getLogger(__name__)
 

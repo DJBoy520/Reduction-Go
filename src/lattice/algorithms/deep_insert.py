@@ -3,10 +3,10 @@
 import numpy as np
 import mpmath
 
-from ..gso.delete_zero import delete_zero_vector
-from .L3fp_params import LOVASZ_CONDITION_PARAM
-from ..gso_mp import init_gso_mp, gso_full_refresh_mp, gso_step_mp
-from ..lll_mp import _size_reduction_lll, PrecisionFailureError
+from ..base.gso import delete_zero_vector
+from .lll_params import LOVASZ_CONDITION_PARAM
+from ..base.gso import init_gso_mp, gso_full_refresh_mp, gso_step_mp
+from .lll import _size_reduction_lll, PrecisionFailureError
 
 MP_STUCK_THRESHOLD = 100
 

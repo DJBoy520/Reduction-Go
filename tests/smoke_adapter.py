@@ -22,16 +22,16 @@ print("=" * 50)
 
 # ── 模块导入 ──
 print("\n[1] 模块导入")
-check("lattice_reduction 导入", lambda: __import__("src.lattice_reduction"))
-check("lll_reduce 导入", lambda: __import__("src.lattice_reduction", fromlist=["lll_reduce"]))
-check("bkz_reduce 导入", lambda: __import__("src.lattice_reduction", fromlist=["bkz_reduce"]))
-check("evaluate_basis_quality 导入", lambda: __import__("src.lattice_reduction", fromlist=["evaluate_basis_quality"]))
+check("lattice 导入", lambda: __import__("src.lattice"))
+check("lll_reduce 导入", lambda: __import__("src.lattice", fromlist=["lll_reduce"]))
+check("bkz_reduce 导入", lambda: __import__("src.lattice", fromlist=["bkz_reduce"]))
+check("evaluate_basis_quality 导入", lambda: __import__("src.lattice", fromlist=["evaluate_basis_quality"]))
 
 # ── LLL 约减 ──
 print("\n[2] LLL 约减（适配层）")
 def test_lll_adapter():
-    from src.lattice_reduction import lll_reduce
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
+    from src.lattice import lll_reduce
+    from src.lattice._native.basis.basis_generator import basis_gen
     basis = basis_gen(10, 173).astype(np.int64)
     B = basis.T.copy()  # 转为行向量
     original = B.copy()
@@ -47,8 +47,8 @@ check("LLL 约减 (dim=10)", test_lll_adapter)
 # ── BKZ 约减 ──
 print("\n[3] BKZ 约减（适配层）")
 def test_bkz_adapter():
-    from src.lattice_reduction import bkz_reduce
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
+    from src.lattice import bkz_reduce
+    from src.lattice._native.basis.basis_generator import basis_gen
     basis = basis_gen(10, 173).astype(np.int64)
     B = basis.T.copy()  # 转为行向量
     original = B.copy()
@@ -63,8 +63,8 @@ check("BKZ 约减 (dim=10, block=5)", test_bkz_adapter)
 # ── 质量评估 ──
 print("\n[4] 格基质量评估（适配层）")
 def test_quality_adapter():
-    from src.lattice_reduction import evaluate_basis_quality, lll_reduce
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
+    from src.lattice import evaluate_basis_quality, lll_reduce
+    from src.lattice._native.basis.basis_generator import basis_gen
     basis = basis_gen(10, 173).astype(np.int64)
     B = basis.T.copy()
     lll_reduce(B, delta=0.75)
@@ -80,10 +80,10 @@ check("格基质量评估", test_quality_adapter)
 # ── 一致性测试：适配层 vs 原生层 ──
 print("\n[5] 一致性测试：适配层 LLL 结果应与原生层一致")
 def test_consistency():
-    from src.lattice_reduction import lll_reduce
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
-    from src.lattice_reduction._native.lll.L3fp import l3fp
-    from src.lattice_reduction.adapter.common_adapter import to_column_basis, to_row_basis
+    from src.lattice import lll_reduce
+    from src.lattice._native.basis.basis_generator import basis_gen
+    from src.lattice._native.lll.L3fp import l3fp
+    from src.lattice.adapter.common_adapter import to_column_basis, to_row_basis
     basis = basis_gen(10, 173).astype(np.int64)
     B_adapter = basis.T.copy()  # 行向量，适配层用
     B_native = basis.copy()      # 列向量，原生层用

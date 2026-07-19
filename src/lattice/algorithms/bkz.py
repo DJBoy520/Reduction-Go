@@ -1,15 +1,24 @@
-"""BKZ 约减（Schnorr-Euchner 1994）— 纯 mpmath + 逐迭代进度回调。"""
+"""BKZ 约减（Schnorr-Euchner 1994）— 纯 mpmath 实现。
+
+合并自原 _native/bkz/bkz_schnorr_euchner.py 和
+_native/bkz/bkz_schnorr_euchner_progress_check.py。
+通过 progress_cb 可选参数支持进度跟踪。
+"""
 
 import numpy as np
 
-from .bkz_params import DELTA
-from ..lll_mp import lll_mp, PrecisionFailureError
-from ..lll.L3fp_deep_insertion import l3fp_deep_insert
-from ..enumeration import ENUM_ALGORITHMS
-from ..gso_mp import (
-    init_gso_mp, gso_full_refresh_mp,
-    gso_norms_to_float, gso_coeffs_to_float,
+from .lll import lll_mp
+from .deep_insert import l3fp_deep_insert
+from ..base.enumeration import ENUM_ALGORITHMS
+from ..base.precision_errors import PrecisionFailureError
+from ..base.gso import (
+    init_gso_mp,
+    gso_full_refresh_mp,
+    gso_norms_to_float,
+    gso_coeffs_to_float,
 )
+
+DELTA = 3 / 4
 
 
 def structural_changes(gs_norms_before, gs_norms_after, block_size):
@@ -19,7 +28,7 @@ def structural_changes(gs_norms_before, gs_norms_after, block_size):
     return np.allclose(gs_norms_before, gs_norms_after, rtol=0, atol=tol)
 
 
-def bkz_se_pc(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
+def bkz(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
     """BKZ 约减（Schnorr-Euchner + 纯 mpmath）。
 
     Args:
@@ -27,7 +36,7 @@ def bkz_se_pc(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
         block_size: BKZ 块大小。
         enum_algo: 枚举算法 key。
         dps: mpmath 精度位数。
-        progress_cb: 进度回调 fn(z, m, shortest_norm)，每轮迭代后调用。
+        progress_cb: 可选进度回调 fn(z, m, shortest_norm)，每轮迭代后调用。
 
     Returns:
         (basis_matrix, gsc_float64, gsn_float64)
@@ -110,3 +119,8 @@ def bkz_se_pc(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
             progress_cb(z, m, shortest)
 
     return basis_matrix, gs_coeff_matrix, gs_squared_norms
+
+
+# 向后兼容别名
+bkz_se = bkz
+bkz_se_pc = bkz
