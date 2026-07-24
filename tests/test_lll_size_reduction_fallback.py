@@ -6,7 +6,7 @@ import mpmath
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.lattice_reduction._native.lll_mp import _size_reduction_lll
+from src.lattice._native.lll_mp import _size_reduction_lll
 
 
 def test_size_reduction_uses_large_int_fallback_for_huge_mu():
@@ -26,7 +26,7 @@ def test_size_reduction_uses_large_int_fallback_for_huge_mu():
 
 
 def test_lll_mp_can_skip_gso_output():
-    from src.lattice_reduction._native.lll_mp import lll_mp
+    from src.lattice._native.lll_mp import lll_mp
 
     basis = np.array([
         [4, 1, 2],

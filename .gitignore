@@ -1,6 +1,17 @@
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.so
+*.o
+*.dSYM/
+.DS_Store
+.idea/
 .venv/
+venv/
+env/
 logs/*.log
 logs/summary.txt
 logs/cysignals_crash_logs/

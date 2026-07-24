@@ -44,7 +44,7 @@ print("=" * 60)
 # ══════════════════════════════════════════════════════════════
 print("\n[8.1] 参数校验")
 
-from src.lattice_reduction import (
+from src.lattice import (
     lll_reduce, bkz_reduce, evaluate_basis_quality,
     InvalidBasisError, ReductionFailedError, LatticeReductionError,
 )
@@ -105,7 +105,7 @@ def test_logging_works():
     import logging
     # 设置 DEBUG 级别以捕获所有日志
     logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
-    logger = logging.getLogger("src.lattice_reduction.adapter.lll_adapter")
+    logger = logging.getLogger("src.lattice.adapter.lll_adapter")
     assert logger is not None, "Logger should exist"
 check("日志记录器存在", test_logging_works)
 
@@ -117,7 +117,7 @@ print("\n[8.4] 正常路径验证")
 
 def test_lll_valid_input():
     """合法输入应正常工作"""
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
+    from src.lattice._native.basis.basis_generator import basis_gen
     B = basis_gen(10, 173).astype(np.int64).T
     lll_reduce(B, delta=0.75)
     assert not np.any(np.isnan(B)), "NaN in result"
@@ -126,7 +126,7 @@ check("LLL 合法输入", test_lll_valid_input)
 
 def test_bkz_valid_input():
     """合法输入应正常工作"""
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
+    from src.lattice._native.basis.basis_generator import basis_gen
     B = basis_gen(10, 173).astype(np.int64).T
     result = bkz_reduce(B, block_size=5, max_loops=2)
     assert result["completed_loops"] >= 1

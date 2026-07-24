@@ -37,10 +37,10 @@ print("\n[7.1] LLL 约减一致性验证")
 
 def test_lll_low_dim():
     """低维度 (dim=5): 精确验证约减后向量范数"""
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
-    from src.lattice_reduction._native.lll.L3fp import l3fp
-    from src.lattice_reduction.adapter.common_adapter import to_column_basis, to_row_basis
-    from src.lattice_reduction import lll_reduce
+    from src.lattice._native.basis.basis_generator import basis_gen
+    from src.lattice._native.lll.L3fp import l3fp
+    from src.lattice.adapter.common_adapter import to_column_basis, to_row_basis
+    from src.lattice import lll_reduce
     basis = basis_gen(5, 50)
     B_adapter = basis.T.copy()
     B_native = basis.copy()
@@ -55,9 +55,9 @@ check("LLL 低维度一致性 (dim=5)", test_lll_low_dim)
 
 def test_lll_medium_dim():
     """中维度 (dim=20): 验证约减效果"""
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
-    from src.lattice_reduction import lll_reduce
-    from src.lattice_reduction._native.quality.basis_quality_characteristics import compute_root_hermite_factor, compute_lattice_volume_log
+    from src.lattice._native.basis.basis_generator import basis_gen
+    from src.lattice import lll_reduce
+    from src.lattice._native.quality.basis_quality_characteristics import compute_root_hermite_factor, compute_lattice_volume_log
     basis = basis_gen(20, 173)
     B = basis.T.copy()
     original_norms = np.sort(np.linalg.norm(B, axis=1))
@@ -76,8 +76,8 @@ check("LLL 中维度约减效果 (dim=20)", test_lll_medium_dim)
 
 def test_lll_high_dim():
     """高维度 (dim=50): 验证约减不崩溃"""
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
-    from src.lattice_reduction import lll_reduce
+    from src.lattice._native.basis.basis_generator import basis_gen
+    from src.lattice import lll_reduce
     basis = basis_gen(50, 173)
     B = basis.T.copy()
     t0 = time.time()
@@ -97,8 +97,8 @@ print("\n[7.2] BKZ 约减一致性验证")
 
 def test_bkz_low_dim():
     """低维度 BKZ: 验证约减效果"""
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
-    from src.lattice_reduction import bkz_reduce
+    from src.lattice._native.basis.basis_generator import basis_gen
+    from src.lattice import bkz_reduce
     basis = basis_gen(10, 173)
     B = basis.T.copy()
     original_norms = np.sort(np.linalg.norm(B, axis=1))
@@ -112,8 +112,8 @@ check("BKZ 低维度约减效果 (dim=10)", test_bkz_low_dim)
 
 def test_bkz_improves_over_lll():
     """BKZ 应该比 LLL 更好（或相等）"""
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
-    from src.lattice_reduction import lll_reduce, bkz_reduce
+    from src.lattice._native.basis.basis_generator import basis_gen
+    from src.lattice import lll_reduce, bkz_reduce
     basis = basis_gen(15, 173)
     B_lll = basis.T.copy()
     B_bkz = basis.T.copy()
@@ -134,8 +134,8 @@ print("\n[7.3] 格基质量评估验证")
 
 def test_quality_metrics():
     """验证质量评估指标的合理性"""
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
-    from src.lattice_reduction import lll_reduce, evaluate_basis_quality
+    from src.lattice._native.basis.basis_generator import basis_gen
+    from src.lattice import lll_reduce, evaluate_basis_quality
     basis = basis_gen(15, 173)
     B = basis.T.copy()
     lll_reduce(B, delta=0.75)
@@ -150,7 +150,7 @@ check("质量评估指标合理性", test_quality_metrics)
 
 def test_quality_identity():
     """单位矩阵的质量评估"""
-    from src.lattice_reduction import evaluate_basis_quality
+    from src.lattice import evaluate_basis_quality
     B = np.eye(10, dtype=np.int64)
     q = evaluate_basis_quality(B, reduced=True)
     assert abs(q["shortest_norm"] - 1.0) < 1e-6, f"Identity shortest norm: {q['shortest_norm']}"
@@ -165,7 +165,7 @@ print("\n[7.4] 边界与异常验证")
 
 def test_already_reduced():
     """已约减的基不应被破坏"""
-    from src.lattice_reduction import lll_reduce
+    from src.lattice import lll_reduce
     B = np.eye(10, dtype=np.int64)
     original = B.copy()
     lll_reduce(B, delta=0.75)
@@ -176,8 +176,8 @@ check("已约减基不被破坏 (identity)", test_already_reduced)
 
 def test_singular_like_matrix():
     """奇异矩阵（行列式为0）应能处理"""
-    from src.lattice_reduction import lll_reduce
-    from src.lattice_reduction.adapter.common_adapter import LatticeReductionError
+    from src.lattice import lll_reduce
+    from src.lattice.adapter.common_adapter import LatticeReductionError
     B = np.array([[1, 2], [2, 4]], dtype=np.int64)  # 行线性相关
     try:
         lll_reduce(B, delta=0.75)
@@ -189,7 +189,7 @@ check("奇异矩阵处理", test_singular_like_matrix)
 
 def test_large_entries():
     """大整数矩阵（模拟密码学场景）"""
-    from src.lattice_reduction import lll_reduce
+    from src.lattice import lll_reduce
     rng = np.random.default_rng(42)
     B = rng.integers(0, 8380417, size=(8, 8)).astype(np.int64)
     lll_reduce(B, delta=0.75)
@@ -200,7 +200,7 @@ check("大整数矩阵 (q=8380417, dim=8)", test_large_entries)
 
 def test_sparse_matrix():
     """稀疏矩阵"""
-    from src.lattice_reduction import lll_reduce
+    from src.lattice import lll_reduce
     B = np.zeros((6, 6), dtype=np.int64)
     for i in range(6):
         B[i, i] = 1
@@ -226,7 +226,7 @@ def test_full_attack_toy():
     s2 = np.random.randint(0, 3, (k, n))
     t = vec_add_mod(mat_vec_mul(A, s1, q), s2, q) % q
     ok = verify_basis(A, t, q, s1, s2)
-    assert ok, "Basis verification failed"
+    assert ok.passed, f"Basis verification failed: {ok.error}"
     result = run_attack(A, t, q, s1, s2, no_bkz=True)
     perfect = sum(1 for c in result["candidates"] if c.get("perfect"))
     assert perfect >= 1, f"Should find perfect recovery, found {perfect}"

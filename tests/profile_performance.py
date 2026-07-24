@@ -6,11 +6,11 @@ import numpy as np
 
 def profile_dim(dim, label):
     """在指定维度下 profiling 各环节耗时。"""
-    from src.lattice_reduction._native.basis.basis_generator import basis_gen
-    from src.lattice_reduction._native.lll.L3fp import l3fp
-    from src.lattice_reduction._native.bkz.bkz_schnorr_euchner_progress_check import bkz_se_pc
-    from src.lattice_reduction._native.gso.gsofp_se import gso_step
-    from src.lattice_reduction._native.quality.basis_quality_evaluation import compute_basis_quality_characteristics
+    from src.lattice._native.basis.basis_generator import basis_gen
+    from src.lattice._native.lll.L3fp import l3fp
+    from src.lattice.algorithms.bkz import bkz
+    from src.lattice._native.gso.gsofp_se import gso_step
+    from src.lattice._native.quality.basis_quality_evaluation import compute_basis_quality_characteristics
 
     print(f"\n{'='*60}")
     print(f"  [{label}] dim={dim}")
@@ -39,7 +39,7 @@ def profile_dim(dim, label):
     if dim <= 30:
         block_size = min(dim // 2, 10)
         t0 = time.time()
-        B_bkz, _, _ = bkz_se_pc(basis.copy(), block_size, "1")
+        B_bkz, _, _ = bkz(basis.copy(), block_size, "1")
         t_bkz = time.time() - t0
         print(f"  BKZ (b={block_size}): {t_bkz:.4f}s")
     else:
