@@ -5,7 +5,7 @@ import mpmath
 
 from ..base.gso import delete_zero_vector
 from .lll_params import LOVASZ_CONDITION_PARAM
-from ..base.gso import init_gso_mp, gso_full_refresh_mp, gso_step_mp
+from ..base.gso import init_gso_mp, gso_full_refresh_mp, gso_step_mp, gso_coeffs_to_float, gso_norms_to_float
 from .lll import _size_reduction_lll, PrecisionFailureError
 
 MP_STUCK_THRESHOLD = 100
@@ -34,7 +34,6 @@ def l3fp_deep_insert(injected_basis_matrix, gs_coeff_matrix=None,
     di_min = start_stage if block_start is None else block_start
 
     gsc, gsn = init_gso_mp(m_cols)
-    gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, m_cols, dps)
 
     stage = max(start_stage, 1)
     end_stage = m_cols
@@ -44,40 +43,42 @@ def l3fp_deep_insert(injected_basis_matrix, gs_coeff_matrix=None,
     max_f_c = end_stage * 3
     stuck_counter = 0
 
-    while stage < end_stage and iterations < max_iterations:
-        iterations += 1
-        gso_step_mp(injected_basis_matrix, gsc, gsn, stage, dps)
-        f_c, need_full_refresh, _ = _size_reduction_lll(stage, gsc, gsn, injected_basis_matrix, dps)
+    with mpmath.workdps(dps):
+        gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, m_cols)
 
-        if need_full_refresh:
-            gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, end_stage, dps)
-            stuck_counter += 1
-            if stuck_counter >= MP_STUCK_THRESHOLD:
-                raise PrecisionFailureError(
-                    f"deep_insert: stuck ({stuck_counter}) at stage {stage}", dps)
-            continue
+        while stage < end_stage and iterations < max_iterations:
+            iterations += 1
+            gso_step_mp(injected_basis_matrix, gsc, gsn, stage)
+            f_c, need_full_refresh, _ = _size_reduction_lll(stage, gsc, gsn, injected_basis_matrix)
 
-        if f_c:
-            f_c_count += 1
-            if f_c_count > max_f_c:
-                raise PrecisionFailureError(
-                    f"deep_insert: too many f_c ({f_c_count}) at stage {stage}", dps)
-            gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, end_stage, dps)
-            stuck_counter += 1
-            if stuck_counter >= MP_STUCK_THRESHOLD:
-                raise PrecisionFailureError(
-                    f"deep_insert: stuck ({stuck_counter}) at stage {stage}", dps)
-            continue
+            if need_full_refresh:
+                gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, end_stage)
+                stuck_counter += 1
+                if stuck_counter >= MP_STUCK_THRESHOLD:
+                    raise PrecisionFailureError(
+                        f"deep_insert: stuck ({stuck_counter}) at stage {stage}", dps)
+                continue
 
-        if np.all(injected_basis_matrix[:, stage] == 0):
-            injected_basis_matrix = np.delete(injected_basis_matrix, stage, axis=1)
-            end_stage = injected_basis_matrix.shape[1]
-            gsc, gsn = init_gso_mp(end_stage)
-            gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, end_stage, dps)
-            stage = 1
-            continue
+            if f_c:
+                f_c_count += 1
+                if f_c_count > max_f_c:
+                    raise PrecisionFailureError(
+                        f"deep_insert: too many f_c ({f_c_count}) at stage {stage}", dps)
+                gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, end_stage)
+                stuck_counter += 1
+                if stuck_counter >= MP_STUCK_THRESHOLD:
+                    raise PrecisionFailureError(
+                        f"deep_insert: stuck ({stuck_counter}) at stage {stage}", dps)
+                continue
 
-        with mpmath.workdps(dps):
+            if np.all(injected_basis_matrix[:, stage] == 0):
+                injected_basis_matrix = np.delete(injected_basis_matrix, stage, axis=1)
+                end_stage = injected_basis_matrix.shape[1]
+                gsc, gsn = init_gso_mp(end_stage)
+                gso_full_refresh_mp(injected_basis_matrix, gsc, gsn, end_stage)
+                stage = 1
+                continue
+
             # 使用 object dtype 避免 np.dot 的 int64 溢出
             col = injected_basis_matrix[:, stage].astype(np.int64).astype(object)
             temp_norm = mpmath.mpf(int(col @ col))
@@ -95,14 +96,15 @@ def l3fp_deep_insert(injected_basis_matrix, gs_coeff_matrix=None,
                     stage = max(i - 1, di_min)
                     break
 
-        if not re_ordered:
-            stage += 1
-            stuck_counter = 0
+            if not re_ordered:
+                stage += 1
+                stuck_counter = 0
 
     # 兜底：用 GSO 范数检测线性相关列
     if end_stage == initial_cols:
         gsc_chk, gsn_chk = init_gso_mp(end_stage)
-        gso_full_refresh_mp(injected_basis_matrix, gsc_chk, gsn_chk, end_stage, dps)
+        with mpmath.workdps(dps):
+            gso_full_refresh_mp(injected_basis_matrix, gsc_chk, gsn_chk, end_stage)
         deleted = False
         for col in range(end_stage - 1, -1, -1):
             if float(gsn_chk[col]) <= 0 or np.all(injected_basis_matrix[:, col] == 0):
@@ -113,9 +115,6 @@ def l3fp_deep_insert(injected_basis_matrix, gs_coeff_matrix=None,
             raise PrecisionFailureError(
                 f"deep_insert: no zero vector after {iterations} iterations", dps)
 
-    gsc_out, gsn_out = init_gso_mp(end_stage)
-    gso_full_refresh_mp(injected_basis_matrix, gsc_out, gsn_out, end_stage, dps)
-    from ..gso_mp import gso_coeffs_to_float, gso_norms_to_float
     # ========================================================================
     # 阶段 5：统一后置清理 —— 删除所有零范数列
     # ========================================================================

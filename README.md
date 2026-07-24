@@ -11,27 +11,41 @@
 Reduction-Go/
 ├── main.py                     # CLI 入口
 ├── manage.sh                   # 后台管理脚本 (start/stop/status)
+├── requirements.txt            # Python 依赖
 ├── src/
 │   ├── api.py                  # 统一 API 层（AttackConfig / run_attack）
-│   ├── lattice_attack.py       # 格攻击核心（Kannan 嵌入 + LLL/BKZ）
-│   ├── poly_math.py            # 多项式运算（negacyclic 卷积）
-│   ├── protocol_adapter.py     # FIPS 204 Power2Round 编解码
-│   ├── progress.py             # 进度显示（LLL/BKZ 实时状态）
+│   ├── lattice_attack.py       # 格攻击核心（Kannan 嵌入 + LLL/BKZ + 候选提取）
+│   ├── poly_math.py            # 多项式运算（negacyclic 卷积，自动 NTT 切换）
+│   ├── progress.py             # 进度显示（LLL/BKZ 实时状态 + ETA）
 │   ├── crypto/                 # 密码学基础
-│   │   └── ntt.py              # 数论变换 (NTT)
-│   ├── keys/                   # 密钥与证书
-│   │   ├── keygen.py           # 密钥生成（expand_a, A 矩阵展开）
+│   │   └── ntt.py              # 数论变换 (NTT)，移植自 dilithium-py
+│   ├── protocol/               # FIPS 204 协议层
+│   │   ├── keygen.py           # 密钥生成（ExpandA + CBD，FIPS 204 §4.2）
 │   │   ├── pubkey.py           # DER 公钥编解码
 │   │   ├── spki.py             # SubjectPublicKeyInfo 编解码
+│   │   ├── power2round.py      # Power2Round 编解码（FIPS 204 §4.1）
 │   │   ├── cert_generator.py   # 测试证书生成
-│   │   ├── cert_parser.py      # X.509 证书解析
+│   │   ├── cert_parser.py      # X.509 证书解析（支持 PEM/DER）
 │   │   └── der_utils.py        # DER 编码工具
+│   ├── keys/                   # 密钥模块（重新导出 protocol/）
+│   │   ├── keygen.py           # → protocol.keygen
+│   │   └── pubkey.py           # → protocol.pubkey
 │   ├── utils/                  # 通用工具
-│   │   ├── params.py           # 参数集配置
-│   │   └── logger.py           # 日志配置
-│   └── lattice_reduction/      # 格基约减算法（纯 Python）
-│       ├── adapter/            # 适配层（对齐 fpylll 接口）
-│       └── _native/            # 上游 LatticeReductionAlgorithms 源码
+│   │   ├── params.py           # 参数集配置（唯一定义源）
+│   │   └── logger.py           # 日志配置（控制台 + 文件双输出）
+│   ├── lattice/                # 格基约减算法（纯 Python + mpmath）
+│   │   ├── adapter.py          # 适配层（统一接口 + 精度管理）
+│   │   ├── algorithms/         # 核心算法
+│   │   │   ├── lll.py          # LLL 约减（mpmath 高精度）
+│   │   │   ├── bkz.py          # BKZ 约减（Schnorr-Euchner 1994）
+│   │   │   └── deep_insert.py  # 深插入策略
+│   │   └── base/               # 基础设施
+│   │       ├── gso.py          # Gram-Schmidt 正交化（纯 mpmath）
+│   │       ├── enumeration/    # SVP 枚举器（Schnorr-Euchner / Schnorr-Hörner）
+│   │       ├── precision.py    # 精度管理（维度分层 + 自动升级）
+│   │       └── exceptions.py   # 异常类
+│   ├── common/                 # 通用基础模块（配置、异常、工具）
+│   └── domain/                 # 领域模型（VerifyResult 等）
 ├── tests/                      # 测试
 ├── certs/                      # 证书存放目录
 └── logs/                       # 运行日志
@@ -64,21 +78,19 @@ python3 main.py toy --bkz-block-size 5 --bkz-max-loops 2
 
 ## 参数集
 
-| 名称 | k | l | n | 格维度 | BKZ block | 浮点精度 | 相对耗时 | 用途 |
-|------|---|---|---|--------|-----------|----------|----------|------|
-| `toy` --n 10 | 2 | 2 | 10 | 41 | — | double | **1** | 秒级验证 |
-| `toy` (easy) | 2 | 2 | 50 | 201 | 8 | double | **~500** | 快速测试 |
-| `medium` | 3 | 3 | 80 | 481 | 15 | mpfr/200 | **~5,000** | 中等规模 |
-| `hard` | 4 | 4 | 120 | 961 | 20 | mpfr/200 | **~30,000** | 大规模 |
-| `extreme` | 5 | 5 | 200 | 2001 | 25 | mpfr/200 | **~200,000** | 极限测试 |
-| `ML-DSA-44` | 4 | 4 | 256 | 2049 | 25 | mpfr/200 | **~300,000** | FIPS 204 标准 |
-| `ML-DSA-65` | 6 | 6 | 256 | 3073 | 30 | mpfr/200 | **~1,000,000** | FIPS 204 标准 |
-| `ML-DSA-87` | 8 | 8 | 256 | 4097 | 35 | mpfr/200 | **~3,000,000** | FIPS 204 标准 |
+| 名称 | k | l | n | η | 格维度 | BKZ block | BKZ loops | 精度 (dps) | 用途 |
+|------|---|---|---|---|--------|-----------|-----------|------------|------|
+| `toy` (easy) | 2 | 2 | 16 | 2 | 65 | 10 | 2 | 80 | 秒级验证 |
+| `medium` | 3 | 3 | 32 | 3 | 225 | 15 | 3 | 80 | 快速测试 |
+| `hard` | 4 | 4 | 64 | 4 | 513 | 20 | 5 | 200 | 中等规模 |
+| `extreme` | 6 | 6 | 128 | 4 | 1537 | 25 | 8 | 200 | 大规模测试 |
+| `ML-DSA-44` | 4 | 4 | 256 | 2 | 2049 | 25 | 8 | 200 | FIPS 204 标准 |
+| `ML-DSA-65` | 6 | 6 | 256 | 4 | 3073 | 30 | 10 | 200 | FIPS 204 标准 |
+| `ML-DSA-87` | 8 | 8 | 256 | 2 | 4097 | 40 | 15 | 200 | FIPS 204 标准 |
 
-> **相对耗时说明**：以最小参数集（`toy --n 10`，格维度 41）的 LLL 约减时间为基准 1，其他参数集的耗时为相对倍数。实际耗时取决于硬件性能。
+> `toy` 是 `easy` 的别名。通过 `--k / --l / --n` 可覆盖任意参数集的维度。
 > 
-> 耗时与格维度呈超线性关系（约 O(n²·³)），维度每翻倍，耗时约增长 5-6 倍。
-| `ML-DSA-87` | 8 | 8 | 256 | 4097 | 35 | mpfr/200 | FIPS 204 标准 | 真实参数 |
+> `--n 10` 时格维度 = 2×10 + 2×10 + 1 = **41**，可用于秒级冒烟测试。
 
 格维度 = `k*n + l*n + 1`（Kannan 嵌入，+1 为权重维度）。
 
@@ -86,22 +98,22 @@ python3 main.py toy --bkz-block-size 5 --bkz-max-loops 2
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `params` | `toy` | 参数集名称 |
+| `params` | `toy` | 参数集名称（toy/easy/medium/hard/extreme/ML-DSA-44/65/87） |
 | `--no-bkz` | off | 跳过 BKZ，只跑 LLL |
 | `--bkz-block-size N` | 配置值 | BKZ 块大小（越大约减越好但越慢） |
 | `--bkz-max-loops N` | 配置值 | BKZ 最大循环数 |
 | `--bkz-auto-abort` | off | BKZ 连续无改善时提前终止 |
 | `--k / --l / --n` | 配置值 | 覆盖矩阵维度 |
-| `--lll-delta` | 0.999 | LLL 约减质量参数 (0.25, 1.0) |
+| `--lll-delta` | 0.79 | LLL δ 参数，范围 (0.25, 1.0) |
 | `--seed N` | 随机 | 随机种子（便于复现） |
-| `--float-type` | 配置值 | `mpfr` / `double` / `long double` |
-| `--precision N` | 配置值 | MPFR 精度 (bit) |
+| `--mp-dps N` | 自动 | 强制指定 mpmath 精度位数（覆盖自动分层） |
+| `--no-auto-precision` | off | 关闭自适应精度升级，失败直接报错 |
 | `--slack` | off | 启用 Power2Round 合并误差模式 |
 | `--d N` | 13 | Power2Round 的 d 参数 |
-| `--cert PATH` | 无 | 证书文件路径，直接从证书提取公钥攻击 |
-| `--toy-params` | off | 用 toy 参数集解析证书 |
+| `--cert PATH` | 无 | 证书文件路径（PEM/DER），直接从证书提取公钥攻击 |
+| `--toy-params` | off | 用 toy 参数集解析证书（k=l=2, n=30） |
 | `--verbose` | off | DEBUG 级别日志 |
-| `--log-level` | INFO | 自定义日志级别 |
+| `--log-level` | INFO | 自定义日志级别（DEBUG/INFO/WARNING/ERROR/CRITICAL） |
 
 优先级：**CLI > 配置文件 > 默认值**。
 
@@ -112,7 +124,7 @@ python3 main.py toy --bkz-block-size 5 --bkz-max-loops 2
 ### 示例 1：最小参数，秒级验证
 
 ```bash
-python3 main.py toy --no-bkz --n 10 --k 2 --l 2 --seed 42
+python3 main.py toy --no-bkz --n 10 --seed 42
 ```
 
 - 格维度：2×10 + 2×10 + 1 = **41**
@@ -124,7 +136,7 @@ python3 main.py toy --no-bkz --n 10 --k 2 --l 2 --seed 42
 python3 main.py toy --no-bkz --verbose
 ```
 
-- 格维度：**201**
+- 格维度：**65**（k=2, l=2, n=16）
 - 用途：日常测试，LLL 单独即可在小维度完美恢复私钥
 
 ### 示例 3：toy 参数 + BKZ 完整攻击
@@ -133,16 +145,16 @@ python3 main.py toy --no-bkz --verbose
 python3 main.py toy --bkz-block-size 5 --bkz-max-loops 2 --seed 42
 ```
 
-- 格维度：**201**，BKZ block=5
+- 格维度：**65**，BKZ block=5
 - 用途：验证 BKZ 流程完整性
 
-### 示例 4：medium 参数，MPFR 高精度
+### 示例 4：medium 参数
 
 ```bash
 python3 main.py medium --verbose
 ```
 
-- 格维度：**481**，MPFR 200-bit
+- 格维度：**225**（k=3, l=3, n=32）
 - 用途：中等规模验证
 
 ### 示例 5：hard 参数，大维度挑战
@@ -151,7 +163,7 @@ python3 main.py medium --verbose
 python3 main.py hard --bkz-auto-abort --seed 42
 ```
 
-- 格维度：**961**，BKZ block=20
+- 格维度：**513**（k=4, l=4, n=64），BKZ block=20
 - 用途：大维度性能测试
 
 ### 示例 6：自定义维度
@@ -222,12 +234,13 @@ bash manage.sh stop
 | 格维度 | LLL 相对耗时 | BKZ 相对耗时 | 推荐场景 |
 |--------|-------------|-------------|----------|
 | ~40 | 1 | — | 单元测试、秒级验证 |
-| ~200 | ~500 | ~2,000 | 日常开发 |
-| ~500 | ~5,000 | ~50,000 | 功能验证 |
-| ~1000 | ~30,000 | ~500,000 | 性能测试 |
-| ~2000+ | ~300,000 | 不推荐 | 需要耐心 |
+| ~65 | ~10 | ~100 | 日常开发（toy 默认） |
+| ~225 | ~500 | ~5,000 | 功能验证（medium） |
+| ~500 | ~5,000 | ~50,000 | 中等规模（hard） |
+| ~1500 | ~50,000 | ~500,000 | 大规模（extreme） |
+| ~2000+ | ~300,000 | 不推荐 | 需要耐心（ML-DSA-44） |
 
-> 实际耗时取决于硬件性能。
+> 实际耗时取决于硬件性能。耗时与格维度呈超线性关系（约 O(n²·³)）。
 
 ### BKZ block_size 选择
 
@@ -237,6 +250,15 @@ bash manage.sh stop
 - **block_size=30+**: 大规模，耗时急剧增长
 
 建议：先用 `--no-bkz` 跑 LLL 看基线效果，再逐步增大 block_size。
+
+### 自适应精度
+
+项目内置维度分层精度管理：
+- dim < 150：dps=80（快速模式）
+- dim ≥ 250：dps=200（高精度模式）
+- 精度不足时自动升级并重试（`--no-auto-precision` 可关闭）
+
+可通过 `--mp-dps N` 强制指定精度。
 
 ---
 
@@ -291,8 +313,22 @@ python3 tests/test_step8_robustness.py               # 健壮性加固验证
 ### 格约减算法
 
 - **LLL** (Lenstra–Lenstra–Lovász)：多项式时间格基约减，保证找到近似最短向量
+  - 实现：Schnorr-Euchner 1994，纯 mpmath 高精度
+  - Size Reduction + Lovász 条件检查 + GSO 增量更新
 - **BKZ** (Block Korkine–Zolotarev)：分块约减，block_size 越大质量越好但越慢
-- **SVP 枚举器**：Schnorr-Euchner / Schnorr-Hörner 枚举策略
+  - 实现：Schnorr-Euchner 1994，纯 mpmath
+  - LLL 预约减 → 遍历 block → SVP 枚举 → Deep Insertion
+- **SVP 枚举器**：
+  - Schnorr-Euchner 1991 (ceil-bound) — 默认
+  - Schnorr-Euchner 1994 (controlled stepping)
+  - Schnorr-Hörner 1995
+
+### 精度管理
+
+- 基向量：int64（精确整数）
+- GSO 系数/范数：mpmath.mpf（任意精度）
+- 点积：Python int（object dtype，无溢出）
+- 自适应精度：维度分层 + 失败检测 + 自动升级重试
 
 ### Power2Round 模式
 
@@ -302,6 +338,31 @@ python3 tests/test_step8_robustness.py               # 健壮性加固验证
 - s2' 仍相对较小，标准 Kannan 嵌入可恢复
 
 启用方式：`--slack --d 13`
+
+## 已知问题
+
+1. **`src/common/params.py` 与 `src/utils/params.py` 参数不一致**
+   - `api.py` 从 `common/params.py` 读取参数
+   - `protocol/keygen.py` 等从 `utils/params.py` 读取参数
+   - 两者的 easy/medium/hard/extreme 参数值不同（n、η、BKZ 参数等）
+   - 建议：统一到 `utils/params.py`，删除 `common/params.py`
+
+2. **`src/common/params.py` 中 ML-DSA-87 的 l=7 错误**
+   - FIPS 204 规定 ML-DSA-87 为 k=8, l=8
+   - `utils/params.py` 中的值是正确的（l=8）
+
+3. **`src/attack/engine.py` 包含死代码**
+   - 导入了不存在的模块（`.materials`、`..progress._LatticeAttackResult` 等）
+   - 该文件未被当前代码路径使用
+
+4. **`src/lattice/algorithms/lll_mp.py` 语法错误**
+   - `gso_coeffs_to_floa` 缺少末尾 `t`
+   - 导入了不存在的 `_check_gso_failure`
+   - 该文件为未完成的多进程版本，当前未使用
+
+5. **BKZ `max_loops` 参数未传递到底层算法**
+   - `adapter.py` 接收 `max_loops` 参数，但 `bkz()` 函数内部使用固定公式 `max_total_iters = m * 2 + 10`
+   - `--bkz-max-loops` 参数实际不影响 BKZ 终止条件
 
 ## License
 

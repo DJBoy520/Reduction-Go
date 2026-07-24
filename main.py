@@ -171,7 +171,7 @@ def main():
     try:
         result = run_attack(config)
     except Exception as e:
-        logger.error(f"攻击失败: {e}")
+        logger.error(f"攻击失败: {e}", exc_info=True)
         sys.exit(1)
 
     _print_result(result)

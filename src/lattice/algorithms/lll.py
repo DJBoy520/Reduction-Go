@@ -23,11 +23,12 @@ FAST_LIMIT = 2**50
 HARD_LIMIT = 2**60
 
 
-def _size_reduction_lll(stage, gsc, gsn, basis_int, dps):
+def _size_reduction_lll(stage, gsc, gsn, basis_int):
     """Size reduction — 增量更新 gsc，基向量原地修改。
 
     从后往前循环，将 |μ_{i,stage}| > 0.5 的投影系数归约到 [-0.5, 0.5]。
     每步修改基向量 b_stage 并增量更新 gsc[k][stage]，保持 GSO 一致性。
+    精度由外层 workdps 上下文控制。
 
     Returns:
         (f_c, need_full_refresh):
@@ -62,9 +63,9 @@ def _size_reduction_lll(stage, gsc, gsn, basis_int, dps):
                 f_c = True
                 break
             basis_int[:, stage] = col_stage_obj.astype(np.int64)
-            with mpmath.workdps(dps):
-                gso_step_mp(basis_int, gsc, gsn, stage, dps)
-            need_full_refresh = True
+            gso_step_mp(basis_int, gsc, gsn, stage)
+            # gso_step_mp 已正确更新当前列的 GSO 依赖链，无需全量刷新。
+            # 仅在 mu_abs > HARD_LIMIT 或 f_c 溢出时才需要全量刷新。
             continue
 
         old_mu = gsc[i][stage]
@@ -75,13 +76,12 @@ def _size_reduction_lll(stage, gsc, gsn, basis_int, dps):
             gsc[k][stage] -= mu * gsc[k][i]
         gsc[i][stage] -= mu
 
-        with mpmath.workdps(dps):
-            gsn[stage] += (
-                old_mu * old_mu - gsc[i][stage] * gsc[i][stage]
-            ) * gsn[i]
-            if gsn[stage] <= 0:
-                f_c = True
-                break
+        gsn[stage] += (
+            old_mu * old_mu - gsc[i][stage] * gsc[i][stage]
+        ) * gsn[i]
+        if gsn[stage] <= 0:
+            f_c = True
+            break
 
     return f_c, need_full_refresh, size_reduced
 
@@ -112,7 +112,7 @@ def lll_mp(basis_matrix, gs_coeff_matrix=None, gs_squared_norms=None,
         max_valid_stage = 0  # 无列已计算
     else:
         stage = start_stage
-        gso_full_refresh_mp(basis_matrix, gsc, gsn, start_stage + 1, dps)
+        gso_full_refresh_mp(basis_matrix, gsc, gsn, start_stage + 1)
         max_valid_stage = start_stage  # 列 0..start_stage 已有效
 
     size_count = 0
@@ -132,18 +132,18 @@ def lll_mp(basis_matrix, gs_coeff_matrix=None, gs_squared_norms=None,
 
             # 延迟失效：只有当前列尚未计算时才调用完整 GSO
             if stage > max_valid_stage:
-                gso_step_mp(basis_matrix, gsc, gsn, stage, dps)
+                gso_step_mp(basis_matrix, gsc, gsn, stage)
                 max_valid_stage = stage
                 gso_count += 1
 
-            f_c, need_full_refresh, size_reduced = _size_reduction_lll(stage, gsc, gsn, basis_matrix, dps)
+            f_c, need_full_refresh, size_reduced = _size_reduction_lll(stage, gsc, gsn, basis_matrix)
             size_count += 1
 
             # size_reduced 时 GSO 已由 _size_reduction_lll 增量路径保持一致，无需全量刷新。
             # 只在 need_full_refresh（int64 fallback 破坏依赖链）时才全量刷新。
 
             if need_full_refresh:
-                gso_full_refresh_mp(basis_matrix, gsc, gsn, end_stage, dps)
+                gso_full_refresh_mp(basis_matrix, gsc, gsn, end_stage)
                 max_valid_stage = end_stage - 1
                 stage = max(stage - 1, 1)
                 stuck_counter += 1
@@ -158,7 +158,7 @@ def lll_mp(basis_matrix, gs_coeff_matrix=None, gs_squared_norms=None,
                 if delta * gsn[stage - 1] > gsn[stage] + mu * mu * gsn[stage - 1]:
                     # 交换列 — 局部 O(dim) 更新 GSO，保持已有列有效
                     basis_matrix[:, [stage - 1, stage]] = basis_matrix[:, [stage, stage - 1]]
-                    gso_swap_update_mp(basis_matrix, gsc, gsn, stage - 1, dim, dps)
+                    gso_swap_update_mp(basis_matrix, gsc, gsn, stage - 1, dim)
                     swap_count += 1
                     stage = max(stage - 1, 1)
                     max_valid_stage = min(max_valid_stage, stage - 1)
@@ -181,6 +181,7 @@ def lll_mp(basis_matrix, gs_coeff_matrix=None, gs_squared_norms=None,
                 f"LLL exceeded max iterations ({max_iterations})", dps)
 
     if return_gso:
-        gso_full_refresh_mp(basis_matrix, gsc, gsn, end_stage, dps)
+        with mpmath.workdps(dps):
+            gso_full_refresh_mp(basis_matrix, gsc, gsn, end_stage)
         return basis_matrix, gso_coeffs_to_float(gsc, dim, dim), gso_norms_to_float(gsn, dim)
     return basis_matrix

@@ -241,17 +241,28 @@ def evaluate_basis_quality(B, reduced=False):
         return {"det_ratio": 0.0, "orthogonal_defect": 0.0,
                 "shortest_norm": 0.0, "reduced": reduced}
 
-    gram = B @ B.T
-    det_gram = np.linalg.det(gram)
-    if det_gram <= 0:
-        det_gram = 1e-300
-
+    # --- 对数域计算，避免高维溢出 ---
     row_norms = np.linalg.norm(B, axis=1)
-    hadamard = np.prod(row_norms)
-    det_ratio = (det_gram ** (1.0 / n)) / hadamard if hadamard > 0 else 0.0
+    log_hadamard = np.sum(np.log(np.maximum(row_norms, 1e-300)))
 
-    frob = np.sqrt(np.sum(row_norms ** 2))
-    orth_defect = frob / (det_gram ** (1.0 / (2 * n))) if det_gram > 0 else 0.0
+    gram = B @ B.T
+    sign, log_det = np.linalg.slogdet(gram)
+    if sign <= 0:
+        log_det = -700.0  # 行列式非正，视为 0
+
+    # det_ratio = exp(log_det/n - log_hadamard)
+    log_det_ratio = (log_det / n) - log_hadamard
+    det_ratio = np.exp(np.clip(log_det_ratio, -700, 700)) if log_det_ratio > -700 else 0.0
+
+    frob = np.linalg.norm(B)
+    if frob > 0:
+        log_orth_defect = np.log(frob) - (log_det / (2 * n))
+        if not np.isfinite(log_orth_defect):
+            orth_defect = 0.0
+        else:
+            orth_defect = float(np.exp(np.clip(log_orth_defect, -700, 700)))
+    else:
+        orth_defect = 0.0
 
     return {
         "det_ratio": float(det_ratio),

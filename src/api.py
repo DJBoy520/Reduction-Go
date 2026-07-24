@@ -21,7 +21,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
-from .utils.params import get_params, get_d
+from .common.params import get_params, get_d
 from .keys.keygen import keygen, expand_a
 from .keys.pubkey import save_public_key, load_public_key
 from .lattice_attack import run_attack as _lattice_run_attack, classify_results, verify_basis
@@ -195,7 +195,7 @@ def _resolve_config(config: AttackConfig) -> dict:
     bkz_auto_abort = config.bkz_auto_abort or p.get("auto_abort", False)
     float_type = config.float_type if config.float_type is not None else p.get("float_type", "mpfr")
     precision = config.precision if config.precision is not None else p.get("precision", 200)
-    d_param = config.d if config.d is not None else get_d(config.params_name)
+    d_param = config.d if config.d is not None else get_d(p)
     mp_dps = config.mp_dps if config.mp_dps is not None else p.get("mp_dps_default", 100)
 
     seed_bytes = None

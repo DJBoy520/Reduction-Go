@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections import deque
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
@@ -125,6 +126,9 @@ class ProgressEmitter(ABC):
 class WebProgressEmitter(ProgressEmitter):
     """Web 进度发射器 — 预留接口。
 
+    使用有界环形队列（maxlen=1000）存储事件，队列满时自动丢弃最旧事件，
+    杜绝内存无限增长。所有对 _events 的读写操作通过线程锁保护。
+
     未来实现时只需重写 emit() 方法，
     无需修改核心算法或 adapter 代码。
 
@@ -135,18 +139,24 @@ class WebProgressEmitter(ProgressEmitter):
 
     def __init__(self, ws=None):
         self._ws = ws
-        self._events: List[ProgressEvent] = []
+        self._events: deque = deque(maxlen=1000)
+        self._lock = threading.Lock()
 
     def emit(self, event: ProgressEvent) -> None:
         """存储事件到内存列表，未来可通过 WebSocket 推送"""
-        self._events.append(event)
+        with self._lock:
+            self._events.append(event)
         logger.debug("WebProgress emit: %s %s", event.event_type, event.algorithm)
 
     def get_events(self) -> List[ProgressEvent]:
-        return list(self._events)
+        """返回当前事件列表的副本（线程安全）。"""
+        with self._lock:
+            return list(self._events)
 
     def clear_events(self) -> None:
-        self._events.clear()
+        """清空事件队列（线程安全）。"""
+        with self._lock:
+            self._events.clear()
 
 
 # ── CLI 进度发射器 ──
@@ -477,45 +487,24 @@ def print_estimate(
     print(line, file=sys.stderr, flush=True)
 
 
-# ── 全局默认发射器（懒初始化） ──
-
-_default_emitter: Optional[CLIProgressEmitter] = None
-_emitter_lock = threading.Lock()
-
-
-def get_default_emitter() -> CLIProgressEmitter:
-    """获取全局默认 CLI 进度发射器"""
-    global _default_emitter
-    if _default_emitter is None:
-        with _emitter_lock:
-            if _default_emitter is None:
-                _default_emitter = CLIProgressEmitter()
-    return _default_emitter
-
-
-def set_default_emitter(emitter: ProgressEmitter) -> None:
-    """设置全局默认进度发射器（用于测试或 Web 场景）"""
-    global _default_emitter
-    with _emitter_lock:
-        _default_emitter = emitter
-
-
 # ── 兼容类：LLLProgress / BKZProgress ──
 
 class LLLProgress:
     """LLL 进度上下文管理器（兼容原有接口）。
 
-    内部通过 EventDrivenProgress + 默认 CLI emitter 实现输出。
+    内部通过 EventDrivenProgress 实现输出。
+    emitter 可选：传入时启用进度显示，为 None 时静默运行。
     """
 
-    def __init__(self, dim: int, base_matrix, loop: int = 0, max_loops: int = 0):
+    def __init__(self, dim: int, base_matrix, loop: int = 0,
+                 max_loops: int = 0, emitter: Optional[ProgressEmitter] = None):
         self._impl = EventDrivenProgress(
             algorithm="lll",
             dim=dim,
             base_matrix=base_matrix,
             loop=loop,
             max_loops=max_loops,
-            emitter=get_default_emitter(),
+            emitter=emitter,
         )
 
     @property
@@ -566,7 +555,8 @@ class LLLProgress:
 class BKZProgress:
     """BKZ 进度上下文管理器（兼容原有接口）。
 
-    内部通过 EventDrivenProgress + 默认 CLI emitter 实现输出。
+    内部通过 EventDrivenProgress 实现输出。
+    emitter 可选：传入时启用进度显示，为 None 时静默运行。
     """
 
     def __init__(
@@ -576,6 +566,7 @@ class BKZProgress:
         base_matrix,
         loop: int = 0,
         max_loops: int = 0,
+        emitter: Optional[ProgressEmitter] = None,
     ):
         self._impl = EventDrivenProgress(
             algorithm="bkz",
@@ -584,7 +575,7 @@ class BKZProgress:
             loop=loop,
             max_loops=max_loops,
             block_size=block_size,
-            emitter=get_default_emitter(),
+            emitter=emitter,
         )
 
     @property
