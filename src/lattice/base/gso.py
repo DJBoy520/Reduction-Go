@@ -11,7 +11,7 @@
 import numpy as np
 import mpmath
 
-from .precision_errors import PrecisionFailureError
+from ...domain.exceptions import PrecisionFailureError
 
 
 _INT64_DOT_SAFE = 2 ** 62
@@ -103,6 +103,29 @@ def gso_full_refresh_mp(
             has_zero = True
 
     return has_zero
+
+
+def gso_incremental_refresh_mp(
+    basis_int: np.ndarray,
+    gsc: list,
+    gsn: list,
+    start_col: int,
+    end_stage: int,
+) -> None:
+    """增量 GSO 更新 — 仅重算从 start_col 到 end_stage 的列。
+
+    前 start_col 列的 GSO 系数和正交范数不变。
+    复杂度: O((end_stage - start_col)² × n)，比全量刷新省时。
+
+    Args:
+        basis_int: (n, m) int64 numpy 数组，列向量基
+        gsc: (m, m) list-of-lists of mpf（原地修改第 [start_col:] 行/列）
+        gsn: (m,) list of mpf（原地修改 [start_col:] 项）
+        start_col: 起始列索引（含）
+        end_stage: 结束列索引（含）
+    """
+    for col in range(start_col, end_stage + 1):
+        gso_step_mp(basis_int, gsc, gsn, col)
 
 
 def gso_step_mp(

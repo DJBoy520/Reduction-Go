@@ -17,8 +17,16 @@ Reduction-Go/
 │   ├── lattice_attack.py       # 格攻击核心（Kannan 嵌入 + LLL/BKZ + 候选提取）
 │   ├── poly_math.py            # 多项式运算（negacyclic 卷积，自动 NTT 切换）
 │   ├── progress.py             # 进度显示（LLL/BKZ 实时状态 + ETA）
+│   ├── domain/                 # 领域层（零外部依赖，唯一定义源）
+│   │   ├── params.py           # ML-DSA 参数集 + 精度常量 + LLL 参数
+│   │   ├── exceptions.py       # 统一异常体系（FPLLError 基类）
+│   │   ├── config.py           # AttackConfig 数据类
+│   │   └── result.py           # VerifyResult 数据类
+│   ├── common/                 # 通用基础模块（从 domain 重导出）
+│   │   ├── logger.py           # 日志配置（控制台 + 文件双输出）
+│   │   └── utils.py            # Timer、格式化等工具函数
 │   ├── crypto/                 # 密码学基础
-│   │   └── ntt.py              # 数论变换 (NTT)，移植自 dilithium-py
+│   │   └── ntt.py              # 数论变换 (NTT)
 │   ├── protocol/               # FIPS 204 协议层
 │   │   ├── keygen.py           # 密钥生成（ExpandA + CBD，FIPS 204 §4.2）
 │   │   ├── pubkey.py           # DER 公钥编解码
@@ -27,12 +35,6 @@ Reduction-Go/
 │   │   ├── cert_generator.py   # 测试证书生成
 │   │   ├── cert_parser.py      # X.509 证书解析（支持 PEM/DER）
 │   │   └── der_utils.py        # DER 编码工具
-│   ├── keys/                   # 密钥模块（重新导出 protocol/）
-│   │   ├── keygen.py           # → protocol.keygen
-│   │   └── pubkey.py           # → protocol.pubkey
-│   ├── utils/                  # 通用工具
-│   │   ├── params.py           # 参数集配置（唯一定义源）
-│   │   └── logger.py           # 日志配置（控制台 + 文件双输出）
 │   ├── lattice/                # 格基约减算法（纯 Python + mpmath）
 │   │   ├── adapter.py          # 适配层（统一接口 + 精度管理）
 │   │   ├── algorithms/         # 核心算法
@@ -41,15 +43,21 @@ Reduction-Go/
 │   │   │   └── deep_insert.py  # 深插入策略
 │   │   └── base/               # 基础设施
 │   │       ├── gso.py          # Gram-Schmidt 正交化（纯 mpmath）
-│   │       ├── enumeration/    # SVP 枚举器（Schnorr-Euchner / Schnorr-Hörner）
-│   │       ├── precision.py    # 精度管理（维度分层 + 自动升级）
-│   │       └── exceptions.py   # 异常类
-│   ├── common/                 # 通用基础模块（配置、异常、工具）
-│   └── domain/                 # 领域模型（VerifyResult 等）
+│   │       ├── enumeration/    # SVP 枚举器（三种变体，统一接口）
+│   │       └── precision.py    # 精度管理（维度分层 + 自动升级）
+│   └── utils/                  # （已清空，保留目录兼容）
 ├── tests/                      # 测试
 ├── certs/                      # 证书存放目录
 └── logs/                       # 运行日志
 ```
+
+### 依赖流（单向，无循环）
+
+```
+Domain (底)  →  Common / Lattice / Protocol  →  lattice_attack  →  API  →  CLI
+```
+
+`domain/` 层零外部业务依赖，仅使用 Python 标准库 + dataclasses。
 
 ## 依赖
 
@@ -290,7 +298,6 @@ python3 -m pytest tests/ -v
 
 # 单项测试
 python3 -m pytest tests/test_power2round.py -v      # Power2Round 往返测试
-python3 tests/smoke_native.py                        # 格约减原生层冒烟
 python3 tests/smoke_adapter.py                       # 格约减适配层冒烟
 python3 tests/test_step7_consistency.py              # 功能一致性验证
 python3 tests/test_step8_robustness.py               # 健壮性加固验证
@@ -317,11 +324,18 @@ python3 tests/test_step8_robustness.py               # 健壮性加固验证
   - Size Reduction + Lovász 条件检查 + GSO 增量更新
 - **BKZ** (Block Korkine–Zolotarev)：分块约减，block_size 越大质量越好但越慢
   - 实现：Schnorr-Euchner 1994，纯 mpmath
-  - LLL 预约减 → 遍历 block → SVP 枚举 → Deep Insertion
-- **SVP 枚举器**：
+  - LLL 预约减 → 遍历 block → SVP 枚举（局部方阵切片） → Deep Insertion
+  - DELTA = 0.999（严格 Lovász 条件，更强约减力度）
+- **SVP 枚举器**（三种变体，统一接口 `(basis_block, gs_norms, gs_coeffs) → (proj_len, coeff_vec)`）：
   - Schnorr-Euchner 1991 (ceil-bound) — 默认
   - Schnorr-Euchner 1994 (controlled stepping)
   - Schnorr-Hörner 1995
+
+### GSO 数学不变量
+
+- **Size Reduction**：只修改 GSO 系数 μ，正交范数 B* 严格不变
+- **列交换**：格体积守恒 — B'_s · B'_{s+1} = B_s · B_{s+1}
+- **点积**：快速路径（np.int64 原生 dot）+ 安全降级（溢出时 fallback 到 Python 大整数）
 
 ### 精度管理
 
@@ -338,31 +352,6 @@ python3 tests/test_step8_robustness.py               # 健壮性加固验证
 - s2' 仍相对较小，标准 Kannan 嵌入可恢复
 
 启用方式：`--slack --d 13`
-
-## 已知问题
-
-1. **`src/common/params.py` 与 `src/utils/params.py` 参数不一致**
-   - `api.py` 从 `common/params.py` 读取参数
-   - `protocol/keygen.py` 等从 `utils/params.py` 读取参数
-   - 两者的 easy/medium/hard/extreme 参数值不同（n、η、BKZ 参数等）
-   - 建议：统一到 `utils/params.py`，删除 `common/params.py`
-
-2. **`src/common/params.py` 中 ML-DSA-87 的 l=7 错误**
-   - FIPS 204 规定 ML-DSA-87 为 k=8, l=8
-   - `utils/params.py` 中的值是正确的（l=8）
-
-3. **`src/attack/engine.py` 包含死代码**
-   - 导入了不存在的模块（`.materials`、`..progress._LatticeAttackResult` 等）
-   - 该文件未被当前代码路径使用
-
-4. **`src/lattice/algorithms/lll_mp.py` 语法错误**
-   - `gso_coeffs_to_floa` 缺少末尾 `t`
-   - 导入了不存在的 `_check_gso_failure`
-   - 该文件为未完成的多进程版本，当前未使用
-
-5. **BKZ `max_loops` 参数未传递到底层算法**
-   - `adapter.py` 接收 `max_loops` 参数，但 `bkz()` 函数内部使用固定公式 `max_total_iters = m * 2 + 10`
-   - `--bkz-max-loops` 参数实际不影响 BKZ 终止条件
 
 ## License
 

@@ -11,10 +11,11 @@ import numpy as np
 
 from .algorithms.lll import lll_mp
 from .algorithms.bkz import bkz
+from .algorithms.lll_float_fast import lll_float_fast
 from ..domain.exceptions import (
     LatticeReductionError, InvalidBasisError, ReductionFailedError,
+    PrecisionFailureError,
 )
-from .base.precision_errors import PrecisionFailureError
 from .base.precision import get_initial_dps, PrecisionContext, wrap_precision_error
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,39 @@ def validate_block_size(block_size: int, dim: int) -> int:
     return block_size
 
 
+def pairwise_reduce(B_col):
+    """整数成对约减 — 预处理阶段纯 int64 快速降范数。
+
+    对所有列向量两两组合，通过纯 int64 点积计算最优系数 k，
+    执行 B_j = B_j - k * B_i，循环 2 轮。
+
+    Args:
+        B_col: (n, m) int64 列向量基 — 原地修改
+
+    Returns:
+        B_col: 约减后的基
+    """
+    m = B_col.shape[1]
+    if m < 2:
+        return B_col
+
+    for _round in range(2):
+        for i in range(m):
+            bi_dot = np.dot(B_col[:, i], B_col[:, i])
+            if bi_dot == 0:
+                continue
+            for j in range(m):
+                if i == j:
+                    continue
+                dot_ij = np.dot(B_col[:, j], B_col[:, i])
+                k = int(round(float(dot_ij) / float(bi_dot)))
+                if k != 0:
+                    B_col[:, j] = B_col[:, j] - k * B_col[:, i]
+
+    logger.info(f"pairwise_reduce 完成: {_round + 1} passes, m={m}")
+    return B_col
+
+
 def to_column_basis(B: np.ndarray) -> np.ndarray:
     """行向量基 → 列向量基（转置）。"""
     return B.T.copy()
@@ -109,6 +143,24 @@ def lll_reduce(B, delta=0.999, float_type="mpfr", precision=200,
     logger.debug(f"LLL: dim={dim}, delta={delta}, dps={dps}")
 
     B_col = to_column_basis(B)
+
+    # ── 预处理流水线：先用快速 float64/整数方法大致拉正 ──
+    if dim < 150 and auto_precision:
+        B_col_orig = B_col.copy()
+        try:
+            B_col = pairwise_reduce(B_col)
+            B_col = lll_float_fast(B_col)
+            # 验证：检查预处理产物是否有效（无 NaN，在 int64 范围内）
+            B_float = B_col.astype(np.float64)
+            if np.any(np.isnan(B_float)) or np.any(np.isinf(B_float)):
+                raise ValueError("lll_float_fast 产生了 NaN/Inf，回退")
+            if np.any(np.abs(B_float) > 2**62):
+                raise ValueError("lll_float_fast 值溢出 int64 安全范围，回退")
+            logger.info(f"预处理流水线完成: dim={dim}")
+        except Exception as e:
+            B_col = B_col_orig
+            logger.warning(f"预处理流水线失败，退回 mpmath 原生处理: {e}")
+
     ctx = PrecisionContext(B_col, dim, dps, mode)
 
     for attempt in range(mode + 1):
@@ -140,6 +192,24 @@ def lll_reduce_full(B, delta=0.999, float_type="mpfr", precision=200,
     logger.debug(f"LLL: dim={dim}, delta={delta}, dps={dps}")
 
     B_col = to_column_basis(B)
+
+    # ── 预处理流水线：先用快速 float64/整数方法大致拉正 ──
+    if dim < 150 and auto_precision:
+        B_col_orig = B_col.copy()
+        try:
+            B_col = pairwise_reduce(B_col)
+            B_col = lll_float_fast(B_col)
+            # 验证：检查预处理产物是否有效
+            B_float = B_col.astype(np.float64)
+            if np.any(np.isnan(B_float)) or np.any(np.isinf(B_float)):
+                raise ValueError("lll_float_fast 产生了 NaN/Inf，回退")
+            if np.any(np.abs(B_float) > 2**62):
+                raise ValueError("lll_float_fast 值溢出 int64 安全范围，回退")
+            logger.info(f"预处理流水线完成: dim={dim}")
+        except Exception as e:
+            B_col = B_col_orig
+            logger.warning(f"预处理流水线失败，退回 mpmath 原生处理: {e}")
+
     ctx = PrecisionContext(B_col, dim, dps, mode)
 
     for attempt in range(mode + 1):
@@ -212,7 +282,8 @@ def bkz_reduce(B, block_size=20, max_loops=8, enum_algo="1",
 
                 _ret_basis, _ret_gsc, _ret_gsn = bkz(
                     basis_copy, bs, enum_algo,
-                    dps=ctx.current_dps, progress_cb=_progress_wrap,
+                    dps=ctx.current_dps, max_loops=max_loops, auto_abort=auto_abort,
+                    progress_cb=_progress_wrap,
                 )
                 B[:] = to_row_basis(basis_copy)
                 shortest_norms.extend(_collected)

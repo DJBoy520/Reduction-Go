@@ -27,6 +27,7 @@ MLDSA_Q: int = 8380417  # 2^23 - 2^13 + 1
 MP_DPS_LOW: int = 80      # 低维度默认精度（dim ≤ 150）
 MP_DPS_HIGH: int = 200    # 高维度默认精度（dim > 250）
 MP_STUCK_THRESHOLD: int = 100  # 连续无更新迭代上限
+DEEP_INSERT_STUCK_THRESHOLD: int = 100  # deep_insert 连续 stall 上限
 MP_MAX_RETRY: int = 1     # 精度升级最大重试次数
 
 # ── 自动精度分层阈值 ─────────────────────────────────────────────────────────
@@ -226,6 +227,7 @@ __all__ = [
     "MP_DPS_LOW",
     "MP_DPS_HIGH",
     "MP_STUCK_THRESHOLD",
+    "DEEP_INSERT_STUCK_THRESHOLD",
     "MP_MAX_RETRY",
     "AUTO_PRECISION_DIM_LOW",
     "AUTO_PRECISION_DIM_HIGH",

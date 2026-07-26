@@ -22,12 +22,13 @@ from typing import Any, Callable, Optional
 import numpy as np
 
 from .domain.params import get_params, get_d
-from .keys.keygen import keygen, expand_a
-from .keys.pubkey import save_public_key, load_public_key
+from .domain.config import AttackConfig
+from .protocol.keygen import keygen, expand_a
+from .protocol.pubkey import save_public_key, load_public_key
 from .lattice_attack import run_attack as _lattice_run_attack, classify_results, verify_basis
 from .protocol.power2round import ProtocolAdapter
 from .poly_math import mat_vec_mul, vec_add_mod
-from .keys.cert_parser import parse_certificate
+from .protocol.cert_parser import parse_certificate
 from .progress import print_estimate
 
 logger = logging.getLogger(__name__)
@@ -37,48 +38,6 @@ logger = logging.getLogger(__name__)
 ProgressFn = Optional[Callable[[str, dict], None]]
 """进度回调函数签名: (step_name, details_dict) -> None"""
 
-
-@dataclass
-class AttackConfig:
-    """格攻击配置参数。"""
-    # 基本参数
-    params_name: str = "toy"
-    k: Optional[int] = None
-    l: Optional[int] = None
-    n: Optional[int] = None
-
-    # LLL / BKZ
-    no_bkz: bool = False
-    bkz_block_size: Optional[int] = None
-    bkz_max_loops: Optional[int] = None
-    bkz_threads: Optional[int] = None  # 预留：纯 Python BKZ 暂不支持多线程
-    bkz_auto_abort: bool = False
-    lll_delta: float = 0.79
-
-    # 随机种子
-    seed: Optional[int] = None
-
-    # 浮点精度
-    float_type: Optional[str] = None
-    precision: Optional[int] = None
-
-    # Power2Round
-    use_slack: bool = False
-    d: Optional[int] = None
-
-    # 证书模式
-    cert_path: Optional[str] = None
-    toy_params: bool = False
-
-    # 输出目录
-    output_dir: Optional[str] = None
-
-    # 精度控制
-    auto_precision: bool = True
-    mp_dps: Optional[int] = None
-
-    def to_dict(self) -> dict:
-        return {k: v for k, v in self.__dict__.items() if v is not None}
 
 
 @dataclass

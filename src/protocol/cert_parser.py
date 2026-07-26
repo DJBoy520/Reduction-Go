@@ -27,6 +27,7 @@ from .spki import (
     _SubjectPublicKeyInfo,
 )
 from ..domain.params import MLDSA_REGISTRY
+from ..domain.exceptions import CertParseError
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +225,11 @@ def parse_certificate(filepath: str, use_toy: bool = False) -> tuple:
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"证书文件不存在: {filepath}")
+
+    MAX_CERT_SIZE = 1024 * 1024  # 1 MB
+    file_size = os.path.getsize(filepath)
+    if file_size > MAX_CERT_SIZE:
+        raise CertParseError(f"Certificate file too large: {file_size} bytes (max {MAX_CERT_SIZE})")
 
     encoding, content_type = _detect_format(filepath)
     logger.info(f"解析证书: {filepath} ({encoding.upper()}, {content_type})")

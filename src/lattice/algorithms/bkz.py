@@ -11,10 +11,11 @@ import mpmath
 from .lll import lll_mp
 from .deep_insert import l3fp_deep_insert
 from ..base.enumeration import ENUM_ALGORITHMS
-from ..base.precision_errors import PrecisionFailureError
+from ...domain.exceptions import PrecisionFailureError
 from ..base.gso import (
     init_gso_mp,
     gso_full_refresh_mp,
+    gso_incremental_refresh_mp,
     gso_norms_to_float,
     gso_coeffs_to_float,
 )
@@ -23,13 +24,16 @@ DELTA = 0.999
 
 
 def structural_changes(gs_norms_before, gs_norms_after, block_size):
-    """检测 block 的 GSO 范数是否有实质性变化。"""
-    scale = max(np.max(gs_norms_before), np.max(gs_norms_after), 1.0)
-    tol = block_size * 1e-12 * scale
-    return np.allclose(gs_norms_before, gs_norms_after, rtol=0, atol=tol)
+    """检测 block 的 GSO 范数是否有实质性变化（mpmath 版本）。"""
+    scale = max(max(gs_norms_before), max(gs_norms_after), mpmath.mpf(1))
+    tol = mpmath.mpf(block_size) * mpmath.mpf('1e-12') * scale
+    for a, b in zip(gs_norms_before, gs_norms_after):
+        if abs(a - b) > tol:
+            return False
+    return True
 
 
-def bkz(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
+def bkz(basis_matrix, block_size, enum_algo, dps=100, max_loops=8, auto_abort=False, progress_cb=None):
     """BKZ 约减（Schnorr-Euchner + 纯 mpmath）。
 
     Args:
@@ -37,6 +41,8 @@ def bkz(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
         block_size: BKZ 块大小。
         enum_algo: 枚举算法 key。
         dps: mpmath 精度位数。
+        max_loops: 最大 BKZ tour 轮数。
+        auto_abort: 若某轮无任何向量更新则提前终止。
         progress_cb: 可选进度回调 fn(current_iter, total_iters, shortest_norm)，每轮迭代后调用。
 
     Returns:
@@ -60,29 +66,37 @@ def bkz(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
             gso_full_refresh_mp(basis_matrix, gsc_mp, gsn_mp, total_dim)
 
     m = total_dim - 1
-    gs_coeff_matrix = gso_coeffs_to_float(gsc_mp, total_dim, total_dim)
-    gs_squared_norms = gso_norms_to_float(gsn_mp, total_dim)
 
     z = 0
     j = -1
-    max_total_iters = m * 2 + 10
-    total_iters = 0
+    completed_loops = 0
+    tour_updated = False
 
-    while z < m and total_iters < max_total_iters:
-        total_iters += 1
+    while z < m and completed_loops < max_loops:
         j += 1
         k = min(j + block_size - 1, m)
         if j == m:
             j = 0
             k = block_size
+            completed_loops += 1
+            if auto_abort and not tour_updated:
+                break
+            tour_updated = False
 
         block_size_actual = k - j + 1
-        block_gs_norms = gs_squared_norms[j:k + 1]
-        block_gs_coeffs = gs_coeff_matrix[j:k + 1, j:k + 1]
+
+        # 从 mpmath GSO 数据提取 block
+        # block_gs_norms: list of mpf（用于 Lovasz 条件 / structural_changes）
+        block_gs_norms = [mpmath.mpf(gsn_mp[idx]) for idx in range(j, k + 1)]
+        # block_gs_coeffs: numpy float64（solver 需要 2D numpy 切片 gs_coeffs[t, t+1:s+1]）
+        block_gs_coeffs = np.zeros((block_size_actual, block_size_actual), dtype=object)
+        for ri, idx in enumerate(range(j, k + 1)):
+            for ci, cidx in enumerate(range(j, k + 1)):
+                block_gs_coeffs[ri, ci] = gsc_mp[idx][cidx]
 
         candidate_proj_len, candidate_coeff_vec = svp_solver(
             basis_matrix[:, j:k + 1],
-            block_gs_norms,
+            np.array(block_gs_norms, dtype=object),
             block_gs_coeffs,
         )
 
@@ -93,8 +107,10 @@ def bkz(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
             )
         block_end = min(k + 1, m)
 
-        if DELTA * gs_squared_norms[j] > candidate_proj_len:
-            block_gs_norms_before = gs_squared_norms[j:k + 1].copy()
+        # Lovasz 条件检查（mpmath 精度）
+        if mpmath.mpf(DELTA) * gsn_mp[j] > candidate_proj_len:
+            block_gs_norms_before = [mpmath.mpf(gsn_mp[idx]) for idx in range(j, k + 1)]
+            tour_updated = True
             b_new = np.dot(basis_matrix[:, j:k + 1], candidate_coeff_vec)
             injected_basis = np.insert(
                 basis_matrix[:, :block_end + 1], j, np.transpose(b_new), axis=1
@@ -113,12 +129,9 @@ def bkz(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
             basis_matrix[:, :di_cols] = di_basis
 
             with mpmath.workdps(dps):
-                gsc_mp, gsn_mp = init_gso_mp(total_dim)
-                gso_full_refresh_mp(basis_matrix, gsc_mp, gsn_mp, total_dim)
-            gs_coeff_matrix = gso_coeffs_to_float(gsc_mp, total_dim, total_dim)
-            gs_squared_norms = gso_norms_to_float(gsn_mp, total_dim)
+                gso_incremental_refresh_mp(basis_matrix, gsc_mp, gsn_mp, j, total_dim - 1)
 
-            block_gs_norms_after = gs_squared_norms[j:k + 1].copy()
+            block_gs_norms_after = [mpmath.mpf(gsn_mp[idx]) for idx in range(j, k + 1)]
             z = 0
             if not structural_changes(block_gs_norms_before, block_gs_norms_after, block_size):
                 continue
@@ -127,10 +140,12 @@ def bkz(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
 
         # 进度回调（统一签名：current_iter, total_iters, shortest_norm）
         if progress_cb is not None:
-            norms = np.linalg.norm(basis_matrix.astype(np.float64), axis=0)
-            shortest = float(np.min(norms[norms > 0])) if np.any(norms > 0) else 0.0
-            progress_cb(total_iters, max_total_iters, shortest)
+            shortest = float(min(gsn_mp[idx] for idx in range(total_dim) if gsn_mp[idx] > 0))
+            progress_cb(completed_loops, max_loops, shortest)
 
+    # 返回前转 float64
+    gs_coeff_matrix = gso_coeffs_to_float(gsc_mp, total_dim, total_dim)
+    gs_squared_norms = gso_norms_to_float(gsn_mp, total_dim)
     return basis_matrix, gs_coeff_matrix, gs_squared_norms
 
 

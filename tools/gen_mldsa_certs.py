@@ -19,7 +19,7 @@ from asn1crypto.core import (
 
 # DER 构建工具和 OID 从公共模块引用
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.keys.der_utils import (
+from src.protocol.der_utils import (
     build_der_sequence, build_der_set,
     build_der_bitstring, build_der_octet_string,
     build_der_oid, build_der_null, build_der_integer,
@@ -154,6 +154,7 @@ def main():
             sk_path = os.path.join(output_dir, f"{basename}_sk.bin")
             with open(sk_path, "wb") as f:
                 f.write(sk)
+            os.chmod(sk_path, 0o600)
 
             print(f"  [{i}/{count}] {basename}  "
                   f"DER={len(cert_der)} bytes  "

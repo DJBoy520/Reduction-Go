@@ -24,3 +24,4 @@ run.pid
 cert.pem
 *_private.npz
 mldsa44_*.pem
+.hermes_session_id

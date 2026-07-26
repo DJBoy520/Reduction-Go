@@ -17,10 +17,10 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from src.keys.keygen import keygen
+from src.protocol.keygen import keygen
 from src.domain.params import get_params
 from src.protocol.power2round import ProtocolAdapter
-from src.keys.spki import save_spki_pem, save_spki_der, MLDSA_OIDS
+from src.protocol.spki import save_spki_pem, save_spki_der, MLDSA_OIDS
 
 
 def main():

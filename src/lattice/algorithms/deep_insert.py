@@ -8,7 +8,7 @@ from ...domain.params import LOVASZ_CONDITION_PARAM
 from ..base.gso import init_gso_mp, gso_full_refresh_mp, gso_step_mp, gso_coeffs_to_float, gso_norms_to_float
 from .lll import _size_reduction_lll, PrecisionFailureError
 
-MP_STUCK_THRESHOLD = 100
+from ...domain.params import DEEP_INSERT_STUCK_THRESHOLD as MP_STUCK_THRESHOLD
 
 
 def l3fp_deep_insert(injected_basis_matrix, gs_coeff_matrix=None,

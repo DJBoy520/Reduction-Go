@@ -6,20 +6,20 @@ import numpy as np
 def enum_se_solver(basis_block, gs_squared_norms, gs_coeffs):
     """Schnorr-Euchner SVP 枚举（1994，controlled stepping）。"""
     k = len(basis_block[0]) - 1
-    tilde_c = np.zeros(k + 2)
-    tilde_u = np.zeros(k + 2)
-    u = np.zeros(k + 1)
-    y = np.zeros(k + 1)
-    tri = np.zeros(k + 2)
-    v = np.zeros(k + 2)
-    delta = np.ones(k + 2)
+    tilde_c = np.zeros(k + 2, dtype=object)
+    tilde_u = np.zeros(k + 2, dtype=object)
+    u = np.zeros(k + 1, dtype=object)
+    y = np.zeros(k + 1, dtype=object)
+    tri = np.zeros(k + 2, dtype=object)
+    v = np.zeros(k + 2, dtype=object)
+    delta = np.ones(k + 2, dtype=object)
     s, t = 0, 0
     min_squared_norm = gs_squared_norms[0]
     tilde_u[0], u[0] = 1, 1
 
     while t <= k:
-        tilde_c[t] = tilde_c[t + 1] + np.square(y[t] + tilde_u[t]) * gs_squared_norms[t]
-        alpha = np.minimum(1.05 * (k - t + 1) / k, 1)
+        tilde_c[t] = tilde_c[t + 1] + (y[t] + tilde_u[t]) ** 2 * gs_squared_norms[t]
+        alpha = min(1.05 * (k - t + 1) / k, 1)
         if tilde_c[t] < alpha * min_squared_norm:
             if t > 0:
                 t -= 1

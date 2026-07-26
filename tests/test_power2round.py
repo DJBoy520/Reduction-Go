@@ -10,7 +10,7 @@ from src.protocol.power2round import (
     ProtocolAdapter, power2round_encode, power2round_decode,
     get_error_bound
 )
-from src.keys.keygen import keygen
+from src.protocol.keygen import keygen
 from src.domain.params import get_params, get_d
 
 

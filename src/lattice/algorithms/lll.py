@@ -14,7 +14,7 @@ from ..base.gso import (
     init_gso_mp,
     gso_norms_to_float, gso_coeffs_to_float,
 )
-from ..base.precision_errors import PrecisionFailureError
+from ...domain.exceptions import PrecisionFailureError
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ def _size_reduction_lll(stage, gsc, gsn, basis_int):
 
 
 def lll_mp(basis_matrix, gs_coeff_matrix=None, gs_squared_norms=None,
-           start_stage=0, Lovasz_cond_param=0.75, dps=100, progress=None,
+           start_stage=0, Lovasz_cond_param=0.999, dps=100, progress=None,
            return_gso=True):
     """纯 mpmath LLL 约减。
 

@@ -9,7 +9,7 @@ from ...domain.params import (
     MP_DPS_LOW, MP_DPS_HIGH, MP_STUCK_THRESHOLD, MP_MAX_RETRY,
     PRECISION_MODE_LOW, PRECISION_MODE_AUTO, PRECISION_MODE_HIGH,
 )
-from .precision_errors import PrecisionFailureError
+from ...domain.exceptions import PrecisionFailureError
 from ...domain.exceptions import ReductionFailedError
 
 logger = logging.getLogger(__name__)

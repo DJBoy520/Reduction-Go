@@ -35,23 +35,25 @@ def _build_A_flat(A: np.ndarray) -> np.ndarray:
     """Flatten the polynomial matrix A (k, l, n) into A_flat (k*n, l*n).
 
     Each polynomial A[i,j] is expanded into an n×n negacyclic convolution
-    matrix (mod x^n + 1).
+    matrix (mod x^n + 1). Vectorized with numpy indexing — eliminates
+    the inner Python loops.
     """
     k, l, n = A.shape
     kn, ln = k * n, l * n
     A_flat = np.zeros((kn, ln), dtype=np.int64)
+
     for i in range(k):
         for j in range(l):
             poly = A[i, j]
-            for rr in range(n):
-                for cc in range(n):
-                    row = i * n + rr
-                    col = j * n + cc
-                    diff = rr - cc
-                    if diff >= 0:
-                        A_flat[row, col] = int(poly[diff])
-                    else:
-                        A_flat[row, col] = -int(poly[n + diff])
+            row_start, col_start = i * n, j * n
+            # Vectorized: use meshgrid to build the negacyclic block in one shot
+            rr = np.arange(n)[:, None]  # (n, 1)
+            cc = np.arange(n)[None, :]  # (1, n)
+            diff = (rr - cc) % n
+            pos_mask = rr >= cc
+            block = np.where(pos_mask, poly[diff], -poly[diff])
+            A_flat[row_start:row_start + n, col_start:col_start + n] = block
+
     return A_flat
 
 

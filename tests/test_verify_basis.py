@@ -49,59 +49,6 @@ class TestVerifyResult:
             pytest.fail("VerifyResult(passed=False) should be falsy")
 
 
-class TestVerifyBasisClassifier:
-    """测试 src/attack/classifier.py 的 verify_basis 函数。"""
-
-    def _make_toy_data(self, k=2, l=2, n=5, q=8380417):
-        """构造 toy 参数: A, s1, s2, t 满足 A*s1 + s2 ≡ t (mod q)。"""
-        np.random.seed(42)
-        A = np.random.randint(0, 100, (k, l, n))
-        s1 = np.random.randint(0, 3, (l, n))
-        s2 = np.random.randint(0, 3, (k, n))
-
-        # 手动计算 A_flat @ s1_flat + s2_flat mod q
-        from src.attack.basis_builder import build_A_flat
-        A_flat = build_A_flat(A)
-        s1_flat = s1.flatten().astype(object)
-        s2_flat = s2.flatten().astype(object)
-        t_flat = (A_flat.astype(object) @ s1_flat + s2_flat) % q
-        t = t_flat.reshape(k, n)
-
-        return A, s1, s2, t, q, n, k, l
-
-    def test_no_t_recon_returns_not_passed(self):
-        """不传 t_recon → equation_checked=False, passed=False。"""
-        from src.attack.classifier import verify_basis
-        A, s1, s2, t, q, n, k, l = self._make_toy_data()
-        result = verify_basis(A, t, q, n, k, l, sigma=2.0, t_recon=None)
-
-        assert result.equation_checked is False
-        assert result.passed is False
-        assert "t_recon" in result.error
-
-    def test_correct_t_recon_passes(self):
-        """传入正确的 t_recon → equation_checked=True, passed=True。"""
-        from src.attack.classifier import verify_basis
-        A, s1, s2, t, q, n, k, l = self._make_toy_data()
-        # t_recon = s1.flatten() 是简化场景的重建向量
-        t_recon = s1
-        result = verify_basis(A, t, q, n, k, l, sigma=2.0, t_recon=t_recon)
-
-        assert result.equation_checked is True
-        assert result.passed is True
-
-    def test_wrong_t_recon_fails(self):
-        """传入错误的 t_recon → passed=False。"""
-        from src.attack.classifier import verify_basis
-        A, s1, s2, t, q, n, k, l = self._make_toy_data()
-        wrong_t_recon = np.zeros_like(s1)
-        result = verify_basis(A, t, q, n, k, l, sigma=2.0, t_recon=wrong_t_recon)
-
-        assert result.equation_checked is True
-        assert result.passed is False
-        assert "失败" in result.error or "≢" in result.error
-
-
 class TestVerifyBasisLatticeAttack:
     """测试 src/lattice_attack.py 的 verify_basis 函数。"""
 

@@ -9,6 +9,8 @@ from .adapter import (
     lll_reduce, lll_reduce_full, bkz_reduce,
     evaluate_basis_quality,
     LatticeReducer, ReductionResult,
+)
+from ..domain.exceptions import (
     LatticeReductionError, InvalidBasisError, ReductionFailedError,
     PrecisionFailureError,
 )
