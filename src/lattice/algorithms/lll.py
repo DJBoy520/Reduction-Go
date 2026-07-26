@@ -68,20 +68,12 @@ def _size_reduction_lll(stage, gsc, gsn, basis_int):
             # 仅在 mu_abs > HARD_LIMIT 或 f_c 溢出时才需要全量刷新。
             continue
 
-        old_mu = gsc[i][stage]
         basis_int[:, stage] -= mu * basis_int[:, i]
         size_reduced = True
 
         for k in range(i):
             gsc[k][stage] -= mu * gsc[k][i]
         gsc[i][stage] -= mu
-
-        gsn[stage] += (
-            old_mu * old_mu - gsc[i][stage] * gsc[i][stage]
-        ) * gsn[i]
-        if gsn[stage] <= 0:
-            f_c = True
-            break
 
     return f_c, need_full_refresh, size_reduced
 

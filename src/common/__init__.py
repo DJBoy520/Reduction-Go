@@ -1,10 +1,10 @@
 """FPLL 通用基础模块。
 
-提供统一的配置、异常、参数、日志和工具函数。
+提供统一的异常、参数、日志和工具函数。
+所有领域定义统一从 domain 层重导出。
 """
 
-from .config import FPLLConfig
-from .exceptions import (
+from ..domain import (
     FPLLError,
     ConfigError,
     ParamsError,
@@ -22,14 +22,23 @@ from .exceptions import (
     CertParseError,
     CertGenError,
     DERError,
+    get_params,
+    get_d,
+    MLDSA_Q,
+    PARAMS,
+    MLDSA_REGISTRY,
+    AttackConfig,
 )
-from .params import get_params, get_d, MLDSA_Q, PARAMS, MLDSA_REGISTRY
 from .logger import setup_logging
 from .utils import Timer, format_duration, ensure_list, flatten_dict
+
+# 向后兼容别名
+FPLLConfig = AttackConfig
 
 __all__ = [
     # Config
     "FPLLConfig",
+    "AttackConfig",
     # Exceptions
     "FPLLError",
     "ConfigError",

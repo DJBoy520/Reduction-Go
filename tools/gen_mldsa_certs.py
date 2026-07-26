@@ -26,7 +26,7 @@ from src.keys.der_utils import (
     build_der_utc_time, build_der_context_specific,
     build_name,
 )
-from src.utils.params import MLDSA_OIDS
+from src.domain.params import MLDSA_OIDS
 
 
 # ── 证书生成 ──────────────────────────────────────────────────────────────────

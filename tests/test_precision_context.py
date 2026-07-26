@@ -13,11 +13,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 import numpy as np
 
-from src.lattice.base.exceptions import (
+from src.domain.exceptions import (
     PrecisionFailureError, ReductionFailedError,
 )
 from src.lattice.base.precision import PrecisionContext
-from src.lattice.base.precision_constants import (
+from src.domain.params import (
     MP_DPS_LOW, MP_DPS_HIGH,
     PRECISION_MODE_AUTO, PRECISION_MODE_LOW,
 )

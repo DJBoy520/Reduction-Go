@@ -1,4 +1,100 @@
-"""domain 层数据类。"""
-from .result import VerifyResult
+"""domain 层数据类与核心模块。
 
-__all__ = ["VerifyResult"]
+本模块是项目的最底层，不导入任何项目内其他模块（零依赖）。
+所有领域对象、异常、常量、参数配置从此模块导出。
+"""
+
+from .exceptions import (
+    FPLLError,
+    ConfigError,
+    ParamsError,
+    LatticeError,
+    LatticeReductionError,
+    InvalidBasisError,
+    ReductionFailedError,
+    GSOError,
+    LLLError,
+    BKZError,
+    EnumerationError,
+    PrecisionError,
+    PrecisionFailureError,
+    AttackError,
+    BasisError,
+    ClassificationError,
+    ProtocolError,
+    KeyGenError,
+    CertParseError,
+    CertGenError,
+    DERError,
+)
+from .params import (
+    MLDSA_Q,
+    MLDSA_REGISTRY,
+    OID_TO_MLDSA,
+    MLDSA_OIDS,
+    K_TO_MLDSA,
+    PARAMS,
+    MP_DPS_LOW,
+    MP_DPS_HIGH,
+    MP_STUCK_THRESHOLD,
+    MP_MAX_RETRY,
+    AUTO_PRECISION_DIM_LOW,
+    AUTO_PRECISION_DIM_HIGH,
+    PRECISION_MODE_LOW,
+    PRECISION_MODE_AUTO,
+    PRECISION_MODE_HIGH,
+    LOVASZ_CONDITION_PARAM,
+    LLL_MP_DEFAULT_DPS,
+    get_params,
+    get_d,
+    mldsa_from_k,
+)
+from .result import VerifyResult
+from .config import AttackConfig
+
+__all__ = [
+    # 异常
+    "FPLLError",
+    "ConfigError",
+    "ParamsError",
+    "LatticeError",
+    "LatticeReductionError",
+    "InvalidBasisError",
+    "ReductionFailedError",
+    "GSOError",
+    "LLLError",
+    "BKZError",
+    "EnumerationError",
+    "PrecisionError",
+    "PrecisionFailureError",
+    "AttackError",
+    "BasisError",
+    "ClassificationError",
+    "ProtocolError",
+    "KeyGenError",
+    "CertParseError",
+    "CertGenError",
+    "DERError",
+    # 参数
+    "MLDSA_Q",
+    "MLDSA_REGISTRY",
+    "OID_TO_MLDSA",
+    "MLDSA_OIDS",
+    "PARAMS",
+    "MP_DPS_LOW",
+    "MP_DPS_HIGH",
+    "MP_STUCK_THRESHOLD",
+    "MP_MAX_RETRY",
+    "AUTO_PRECISION_DIM_LOW",
+    "AUTO_PRECISION_DIM_HIGH",
+    "PRECISION_MODE_LOW",
+    "PRECISION_MODE_AUTO",
+    "PRECISION_MODE_HIGH",
+    "LOVASZ_CONDITION_PARAM",
+    "LLL_MP_DEFAULT_DPS",
+    "get_params",
+    "get_d",
+    # 数据类
+    "VerifyResult",
+    "AttackConfig",
+]

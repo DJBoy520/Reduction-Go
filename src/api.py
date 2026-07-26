@@ -21,7 +21,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
-from .common.params import get_params, get_d
+from .domain.params import get_params, get_d
 from .keys.keygen import keygen, expand_a
 from .keys.pubkey import save_public_key, load_public_key
 from .lattice_attack import run_attack as _lattice_run_attack, classify_results, verify_basis

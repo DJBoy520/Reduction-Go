@@ -4,7 +4,7 @@ import numpy as np
 import mpmath
 
 from ..base.gso import delete_zero_vector
-from .lll_params import LOVASZ_CONDITION_PARAM
+from ...domain.params import LOVASZ_CONDITION_PARAM
 from ..base.gso import init_gso_mp, gso_full_refresh_mp, gso_step_mp, gso_coeffs_to_float, gso_norms_to_float
 from .lll import _size_reduction_lll, PrecisionFailureError
 
@@ -119,8 +119,9 @@ def l3fp_deep_insert(injected_basis_matrix, gs_coeff_matrix=None,
     # 阶段 5：统一后置清理 —— 删除所有零范数列
     # ========================================================================
     if end_stage > 0:
-        gsc_chk, gsn_chk = init_gso_mp(end_stage)
-        gso_full_refresh_mp(injected_basis_matrix, gsc_chk, gsn_chk, end_stage, dps)
+        with mpmath.workdps(dps):
+            gsc_chk, gsn_chk = init_gso_mp(end_stage)
+            gso_full_refresh_mp(injected_basis_matrix, gsc_chk, gsn_chk, end_stage)
 
         cols_to_delete = []
         for col in range(end_stage - 1, -1, -1):
@@ -138,8 +139,9 @@ def l3fp_deep_insert(injected_basis_matrix, gs_coeff_matrix=None,
     # 最终 GSO 计算
     # ========================================================================
     if end_stage > 0:
-        gsc_out, gsn_out = init_gso_mp(end_stage)
-        gso_full_refresh_mp(injected_basis_matrix, gsc_out, gsn_out, end_stage, dps)
+        with mpmath.workdps(dps):
+            gsc_out, gsn_out = init_gso_mp(end_stage)
+            gso_full_refresh_mp(injected_basis_matrix, gsc_out, gsn_out, end_stage)
     else:
         gsc_out, gsn_out = [], []
 

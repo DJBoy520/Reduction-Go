@@ -11,7 +11,7 @@ from src.protocol.power2round import (
     get_error_bound
 )
 from src.keys.keygen import keygen
-from src.utils.params import get_params, get_d
+from src.domain.params import get_params, get_d
 
 
 def test_roundtrip():
