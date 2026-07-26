@@ -12,6 +12,9 @@ build/
 .venv/
 venv/
 env/
+.kilo/
+cache/
+vscode/
 logs/*.log
 logs/summary.txt
 logs/cysignals_crash_logs/

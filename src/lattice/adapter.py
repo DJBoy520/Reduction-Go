@@ -11,7 +11,7 @@ import numpy as np
 
 from .algorithms.lll import lll_mp
 from .algorithms.bkz import bkz
-from .base.exceptions import (
+from ..domain.exceptions import (
     LatticeReductionError, InvalidBasisError, ReductionFailedError,
 )
 from .base.precision_errors import PrecisionFailureError

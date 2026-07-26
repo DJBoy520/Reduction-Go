@@ -6,6 +6,7 @@ _native/bkz/bkz_schnorr_euchner_progress_check.py。
 """
 
 import numpy as np
+import mpmath
 
 from .lll import lll_mp
 from .deep_insert import l3fp_deep_insert
@@ -18,7 +19,7 @@ from ..base.gso import (
     gso_coeffs_to_float,
 )
 
-DELTA = 3 / 4
+DELTA = 0.999
 
 
 def structural_changes(gs_norms_before, gs_norms_after, block_size):
@@ -46,16 +47,17 @@ def bkz(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
 
     basis_matrix, _, _ = lll_mp(basis_matrix, dps=dps)
 
-    gsc_mp, gsn_mp = init_gso_mp(total_dim)
-    has_zero = gso_full_refresh_mp(basis_matrix, gsc_mp, gsn_mp, total_dim, dps)
-
-    if has_zero:
-        for col in range(total_dim - 1, -1, -1):
-            if float(gsn_mp[col]) <= 0 or np.all(basis_matrix[:, col] == 0):
-                basis_matrix = np.delete(basis_matrix, col, axis=1)
-        total_dim = basis_matrix.shape[1]
+    with mpmath.workdps(dps):
         gsc_mp, gsn_mp = init_gso_mp(total_dim)
-        gso_full_refresh_mp(basis_matrix, gsc_mp, gsn_mp, total_dim, dps)
+        has_zero = gso_full_refresh_mp(basis_matrix, gsc_mp, gsn_mp, total_dim)
+
+        if has_zero:
+            for col in range(total_dim - 1, -1, -1):
+                if float(gsn_mp[col]) <= 0 or np.all(basis_matrix[:, col] == 0):
+                    basis_matrix = np.delete(basis_matrix, col, axis=1)
+            total_dim = basis_matrix.shape[1]
+            gsc_mp, gsn_mp = init_gso_mp(total_dim)
+            gso_full_refresh_mp(basis_matrix, gsc_mp, gsn_mp, total_dim)
 
     m = total_dim - 1
     gs_coeff_matrix = gso_coeffs_to_float(gsc_mp, total_dim, total_dim)
@@ -74,11 +76,21 @@ def bkz(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
             j = 0
             k = block_size
 
+        block_size_actual = k - j + 1
+        block_gs_norms = gs_squared_norms[j:k + 1]
+        block_gs_coeffs = gs_coeff_matrix[j:k + 1, j:k + 1]
+
         candidate_proj_len, candidate_coeff_vec = svp_solver(
             basis_matrix[:, j:k + 1],
-            gs_squared_norms[j:k + 1],
-            gs_coeff_matrix[:, j:k + 1],
+            block_gs_norms,
+            block_gs_coeffs,
         )
+
+        if len(candidate_coeff_vec) != block_size_actual:
+            raise RuntimeError(
+                f"Enumerator returned coeff vec of length {len(candidate_coeff_vec)}, "
+                f"expected {block_size_actual} (block [{j},{k}])"
+            )
         block_end = min(k + 1, m)
 
         if DELTA * gs_squared_norms[j] > candidate_proj_len:
@@ -100,8 +112,9 @@ def bkz(basis_matrix, block_size, enum_algo, dps=100, progress_cb=None):
             di_cols = di_basis.shape[1]
             basis_matrix[:, :di_cols] = di_basis
 
-            gsc_mp, gsn_mp = init_gso_mp(total_dim)
-            gso_full_refresh_mp(basis_matrix, gsc_mp, gsn_mp, total_dim, dps)
+            with mpmath.workdps(dps):
+                gsc_mp, gsn_mp = init_gso_mp(total_dim)
+                gso_full_refresh_mp(basis_matrix, gsc_mp, gsn_mp, total_dim)
             gs_coeff_matrix = gso_coeffs_to_float(gsc_mp, total_dim, total_dim)
             gs_squared_norms = gso_norms_to_float(gsn_mp, total_dim)
 

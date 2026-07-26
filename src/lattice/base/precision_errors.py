@@ -3,8 +3,8 @@
 import numpy as np
 import mpmath
 
-# 向后兼容：统一从 base.exceptions 导入
-from .exceptions import PrecisionFailureError
+# 向后兼容：统一从 domain.exceptions 导入
+from ...domain.exceptions import PrecisionFailureError
 
 
 def set_mp_precision(dps):

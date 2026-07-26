@@ -7,13 +7,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 def smoke_import():
     """测试所有核心模块可导入。"""
     from src.lattice import lll_reduce, bkz_reduce, evaluate_basis_quality
-    from src.lattice.adapter import LatticeReducer, LatticeReductionError, LatticeParams
+    from src.lattice.adapter import LatticeReducer, ReductionResult
     from src.lattice.algorithms.lll import lll_mp
-    from src.lattice.algorithms.bkz import bkz_mp
+    from src.lattice.algorithms.bkz import bkz
     from src.lattice.base.gso import init_gso_mp, gso_full_refresh_mp, gso_step_mp
-    from src.lattice.base.precision_constants import DEFAULT_PRECISION_BITS
-    from src.lattice.base.exceptions import LatticeReductionError, InvalidBasisError, ReductionFailedError, PrecisionFailureError
-    from src.lattice.base.lll_state import LLLState
+    from src.domain.exceptions import LatticeReductionError, InvalidBasisError, ReductionFailedError, PrecisionFailureError
     print("✅ 模块导入：全部成功")
     return True
 

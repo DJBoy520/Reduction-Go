@@ -14,7 +14,7 @@ import os
 
 import numpy as np
 
-from ..utils.params import get_params
+from ..domain.params import get_params
 
 
 # ── ExpandA (FIPS 204 §4.2.2) ────────────────────────────────────────────────
